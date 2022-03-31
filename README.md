@@ -149,7 +149,3 @@ fmt.Println(res)
 // true
 // 113.36689999999999,33.905249999999995
 ```
-
-### Errors 
-
-Parsing errors 
