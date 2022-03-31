@@ -55,28 +55,28 @@ umap["timestamp"] = expr.Custom(ts)
 // Set up an evaluation extender for referencing the user data and
 // using operators on custom types.
 ext := expr.NewExtender(
-  func(expr string, udata any) (expr.Value, error) {
-    switch expr {
+  func(data string, udata any) (expr.Value, error) {
+    switch data {
     case "now":
       // Get the seconds since Epoch.
       return expr.Custom(time.Now()), nil
     default:
-      if len(expr) >= 2 && expr[0] == '{' && expr[len(expr)-1] == '}' {
+      if len(data) >= 2 && data[0] == '{' && data[len(data)-1] == '}' {
         // Try parsing a time.Duration.
-        s := expr[1 : len(expr)-1]
+        s := data[1 : len(data)-1]
         d, err := time.ParseDuration(s)
         if err != nil {
           return expr.Undefined, err
         }
         // Valid time.Duration, return as an Int64 value
-        return Int64(int64(d)), nil
+        return expr.Int64(int64(d)), nil
       }
       // Not a time.Duration, check the umap for the data
       umap := udata.(map[string]expr.Value)
-      return umap[expr], nil
+      return umap[data], nil
     }
   },
-  func(op Op, a, b expr.Value, udata any) (expr.Value, error) {
+  func(op expr.Op, a, b expr.Value, udata any) (expr.Value, error) {
     // Try to convert a and/or b to time.Time
     at, aok := a.Value().(time.Time)
     bt, bok := b.Value().(time.Time)
@@ -84,13 +84,13 @@ ext := expr.NewExtender(
       // Both values are time.Time.
       // Perform comparison operation.
       switch op {
-      case OpLt:
+      case expr.OpLt:
         return expr.Bool(at.Before(bt)), nil
-      case OpLte:
+      case expr.OpLte:
         return expr.Bool(!bt.After(at)), nil
-      case OpGt:
+      case expr.OpGt:
         return expr.Bool(at.After(bt)), nil
-      case OpGte:
+      case expr.OpGte:
         return expr.Bool(!at.Before(bt)), nil
       }
     } else if aok || bok {
@@ -107,9 +107,9 @@ ext := expr.NewExtender(
         y = a.Int64()
       }
       switch op {
-      case OpAdd:
+      case expr.OpAdd:
         return expr.Custom(x.Add(time.Duration(y))), nil
-      case OpSub:
+      case expr.OpSub:
         return expr.Custom(x.Add(-time.Duration(y))), nil
       }
     }
@@ -135,7 +135,7 @@ res, _ = expr.Eval("now + {24h}", &opts)
 fmt.Println(res)
 
 // Compare current time to the timestamp.
-res, _ = Eval("now > timestamp", &opts)
+res, _ = expr.Eval("now > timestamp", &opts)
 fmt.Println(res)
 
 // Get the center of the bounding box as a concatenated string.
