@@ -1,5 +1,7 @@
 # expr
 
+[![GoDoc](https://godoc.org/github.com/tidwall/expr?status.svg)](https://godoc.org/github.com/tidwall/expr)
+
 Expression evaluator for Go
 
 ## Features
@@ -147,3 +149,7 @@ fmt.Println(res)
 // true
 // 113.36689999999999,33.905249999999995
 ```
+
+### Errors 
+
+Parsing errors 
