@@ -826,6 +826,10 @@ func evalSums(expr string, pos, steps int, opts *Options) (Value, error) {
 				s = i + 1
 				continue
 			}
+			if i > 0 && (expr[i-1] == 'e' || expr[i-1] == 'E') {
+				// scientific notation
+				continue
+			}
 			left, err = sum(left, op, expr[s:i], neg, false, pos+s, steps,
 				opts)
 			if err != nil {
