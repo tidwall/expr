@@ -224,6 +224,7 @@ var testTable = []string{
 	(`(true) ? (0xTT) : (0xTT`), (`SyntaxError`),
 	(`(true) ? (0xTT) 123`), (`SyntaxError`),
 	(`(0xTT) ? (0xTT) : 123`), (`SyntaxError`),
+	(`1e+10 > 0 ? "big" : "small"`), (`big`),
 }
 
 func simpleExtendorOptions(
@@ -585,9 +586,9 @@ func TestReadme(t *testing.T) {
 				// Get the seconds since Epoch.
 				return Custom(time.Now()), nil
 			default:
-				if len(expr) >= 2 && expr[0] == '{' && expr[len(expr)-1] == '}' {
+				if len(expr) >= 1 && expr[0] == '$' {
 					// Try parsing a time.Duration.
-					s := expr[1 : len(expr)-1]
+					s := expr[1:]
 					d, err := time.ParseDuration(s)
 					if err != nil {
 						return Undefined, err
@@ -647,19 +648,19 @@ func TestReadme(t *testing.T) {
 	var res Value
 
 	// Return the timestamp.
-	res, _ = Eval("timestamp", &opts)
+	res, _ = Eval(`timestamp`, &opts)
 	fmt.Println(res)
 
 	// Subtract an hour from the timestamp.
-	res, _ = Eval("timestamp - {1h}", &opts)
+	res, _ = Eval(`timestamp - $1h`, &opts)
 	fmt.Println(res)
 
 	// Add one day to the current time.
-	res, _ = Eval("now + {24h}", &opts)
+	res, _ = Eval(`now + $24h`, &opts)
 	fmt.Println(res)
 
-	// Compare current time to the timestamp.
-	res, _ = Eval("now > timestamp", &opts)
+	// See if timestamp is older than a day
+	res, _ = Eval(`timestamp < now - $24h ? "old" : "new"`, &opts)
 	fmt.Println(res)
 
 	// Get the center of the bounding box as a concatenated string.
@@ -669,7 +670,7 @@ func TestReadme(t *testing.T) {
 	// Output:
 	// 2022-03-31 09:00:00 +0000 UTC
 	// 2022-03-31 08:00:00 +0000 UTC
-	// 2022-04-01 12:09:38.313927 -0700 MST m=+86400.001490167
-	// true
+	// 2022-04-02 06:00:40.834656 -0700 MST m=+86400.000714835
+	// old
 	// 113.36689999999999,33.905249999999995
 }
