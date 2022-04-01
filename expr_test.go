@@ -15,8 +15,8 @@ import (
 )
 
 var testTable = []string{
-	(``), (``),
-	(` `), (``),
+	(``), (`undefined`),
+	(` `), (`undefined`),
 	(`()`), (`SyntaxError`),
 	(`"\"`), (`SyntaxError`),
 	(`1`), (`1`),
@@ -225,6 +225,14 @@ var testTable = []string{
 	(`(true) ? (0xTT) 123`), (`SyntaxError`),
 	(`(0xTT) ? (0xTT) : 123`), (`SyntaxError`),
 	(`1e+10 > 0 ? "big" : "small"`), (`big`),
+	(`undefined`), (`undefined`),
+	(`true ? () : ()`), (`SyntaxError`),
+	(`undefined + 10`), (`NaN`),
+	(`null`), (`null`),
+	(`null + 10`), (`10`),
+	(`undefined + undefined`), (`NaN`),
+	(`null + null`), (`0`),
+	(`null + undefined`), (`NaN`),
 }
 
 func simpleExtendorOptions(
@@ -253,7 +261,7 @@ func TestEval(t *testing.T) {
 				return Uint64(x), nil
 			}
 			if expr == "blank_err" {
-				return Undefined, nil
+				return Undefined, ErrUndefined
 			}
 			if expr == "custom_err" {
 				return Undefined, errors.New("hiya")
@@ -265,12 +273,12 @@ func TestEval(t *testing.T) {
 				}
 				return Custom(x), nil
 			}
-			return Undefined, nil
+			return Undefined, ErrUndefined
 		},
 		func(op Op, a, b Value, udata interface{}) (Value, error) {
 			if a.Number() == -90909090 || b.Number() == -90909090 {
 				// special condition
-				return Undefined, nil
+				return Undefined, ErrUndefined
 			}
 			if a.Number() == -80808080 || b.Number() == -80808080 {
 				// special condition
@@ -307,7 +315,7 @@ func TestEval(t *testing.T) {
 			case OpOr:
 				return Bool(a.Bool() || b.Bool()), nil
 			default:
-				return Undefined, nil
+				return Undefined, ErrUndefined
 			}
 		},
 	)
@@ -469,7 +477,7 @@ func TestEval(t *testing.T) {
 			return Custom("hello"), nil
 		},
 		func(op Op, a, b Value, udata any) (Value, error) {
-			return Undefined, nil
+			return Undefined, ErrUndefined
 		},
 	)
 	_, err = Eval("u64(1) + 1", &sops)
@@ -597,7 +605,10 @@ func TestReadme(t *testing.T) {
 					return Int64(int64(d)), nil
 				}
 				// Not a time.Duration, check the umap for the data
-				umap := udata.(map[string]Value)
+				umap, ok := udata.(map[string]Value)
+				if !ok {
+					return Undefined, ErrUndefined
+				}
 				return umap[expr], nil
 			}
 		},
@@ -638,7 +649,7 @@ func TestReadme(t *testing.T) {
 					return Custom(x.Add(-time.Duration(y))), nil
 				}
 			}
-			return Undefined, nil
+			return Undefined, ErrUndefined
 		},
 	)
 

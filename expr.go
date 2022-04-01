@@ -35,6 +35,8 @@ func errReference(err error, pos int) error {
 	}
 }
 
+var ErrUndefined = errors.New("undefined")
+
 type int64er interface{ Int64() int64 }
 type uint64er interface{ Uint64() uint64 }
 type float64er interface{ Float64() float64 }
@@ -59,8 +61,10 @@ func CharPosOfErr(err error) int {
 	return -1
 }
 
-// Undefined value
-var Undefined Value
+var (
+	Undefined = Value{kind: undf}
+	Null      = Value{kind: nval}
+)
 
 // Op is an operator for Custom values used for the Options.Op function.
 type Op int
@@ -119,6 +123,7 @@ type kind byte
 
 const (
 	undf kind = iota // undefined
+	nval             // null
 	bval             // bool
 	fval             // float64
 	ival             // int64
@@ -164,17 +169,16 @@ func (a Value) IsCustom() bool {
 }
 
 func doOp(op Op, a, b Value, pos int, opts *Options) (Value, error) {
-	// if opts == nil || opts.Extender == nil {
-	// 	return Undefined, errOperator(errors.New("undefined"), pos)
-	// }
-	v, err := opts.Extender.Op(op, a, b, opts.UserData)
-	if err != nil {
-		return Undefined, errOperator(err, pos)
+	if opts != nil && opts.Extender != nil {
+		v, err := opts.Extender.Op(op, a, b, opts.UserData)
+		if err == nil {
+			return v, nil
+		}
+		if err != ErrUndefined {
+			return Undefined, errOperator(err, pos)
+		}
 	}
-	if v.kind == undf {
-		return Undefined, errOperator(errors.New("undefined"), pos)
-	}
-	return v, nil
+	return Undefined, errOperator(errors.New("undefined"), pos)
 }
 
 func (a Value) add(b Value, pos int, opts *Options) (Value, error) {
@@ -191,8 +195,9 @@ func (a Value) add(b Value, pos int, opts *Options) (Value, error) {
 			return Value{kind: uval, uval: a.uval + b.uval}, nil
 		case sval:
 			return Value{kind: sval, sval: a.sval + b.sval}, nil
-		case bval:
-			return a.tofval().add(b.tofval(), pos, opts)
+		case bval, undf, nval:
+			a, b = a.tofval(), b.tofval()
+			return Value{kind: fval, fval: a.fval + b.fval}, nil
 		}
 	} else if a.isnum() && b.isnum() {
 		a, b = a.tofval(), b.tofval()
@@ -204,7 +209,7 @@ func (a Value) add(b Value, pos int, opts *Options) (Value, error) {
 
 func (a Value) isnum() bool {
 	switch a.kind {
-	case fval, ival, uval, bval:
+	case fval, ival, uval, bval, nval, undf:
 		return true
 	}
 	return false
@@ -416,6 +421,10 @@ func (a Value) or(b Value, pos int, opts *Options) (Value, error) {
 
 func (a Value) tostr() Value {
 	switch a.kind {
+	case undf:
+		return Value{kind: sval, sval: "undefined"}
+	case nval:
+		return Value{kind: sval, sval: "null"}
 	case bval:
 		return Value{kind: sval, sval: strconv.FormatBool(a.bval)}
 	case fval:
@@ -447,6 +456,8 @@ func (a Value) tostr() Value {
 
 func (a Value) tofval() Value {
 	switch a.kind {
+	case nval:
+		return Value{kind: fval, fval: 0}
 	case bval:
 		if a.bval {
 			return Value{kind: fval, fval: 1}
@@ -621,6 +632,14 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 		if expr == "Infinity" {
 			return Float64(math.Inf(+1)), nil
 		}
+	case 'u':
+		if expr == "undefined" {
+			return Undefined, nil
+		}
+	case 'n':
+		if expr == "null" {
+			return Null, nil
+		}
 	case '(':
 		// grouping
 		if expr[len(expr)-1] != ')' {
@@ -631,12 +650,12 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 	if opts != nil && opts.Extender != nil {
 		res, err := opts.Extender.Eval(expr, opts.UserData)
 		if err != nil {
+			if err == ErrUndefined {
+				return Undefined, errUndefined(expr, pos)
+			}
 			return Undefined, errReference(err, pos)
 		}
-		if res.kind != undf {
-			return res, nil
-		}
-		// fallthrough
+		return res, nil
 	}
 	return Undefined, errUndefined(expr, pos)
 }
@@ -1120,12 +1139,12 @@ func NewExtender(
 ) Extender {
 	if eval == nil {
 		eval = func(expr string, udata any) (Value, error) {
-			return Undefined, nil
+			return Undefined, ErrUndefined
 		}
 	}
 	if op == nil {
 		op = func(op Op, a, b Value, udata any) (Value, error) {
-			return Undefined, nil
+			return Undefined, ErrUndefined
 		}
 	}
 	return &simpleExtender{eval, op}

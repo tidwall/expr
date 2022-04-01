@@ -97,7 +97,10 @@ ext := NewExtender(
 				return Int64(int64(d)), nil
 			}
 			// Not a time.Duration, check the umap for the data
-			umap := udata.(map[string]Value)
+			umap, ok := udata.(map[string]Value)
+			if !ok {
+				return Undefined, ErrUndefined
+			}
 			return umap[expr], nil
 		}
 	},
@@ -138,7 +141,7 @@ ext := NewExtender(
 				return Custom(x.Add(-time.Duration(y))), nil
 			}
 		}
-		return Undefined, nil
+		return Undefined, ErrUndefined
 	},
 )
 
