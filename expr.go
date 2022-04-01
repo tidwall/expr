@@ -421,8 +421,6 @@ func (a Value) or(b Value, pos int, opts *Options) (Value, error) {
 
 func (a Value) tostr() Value {
 	switch a.kind {
-	case undf:
-		return Value{kind: sval, sval: "undefined"}
 	case nval:
 		return Value{kind: sval, sval: "null"}
 	case bval:
@@ -450,8 +448,9 @@ func (a Value) tostr() Value {
 			return Value{kind: sval, sval: v.String()}
 		}
 		return Value{kind: sval, sval: fmt.Sprint(a.cval)}
+	default:
+		return Value{kind: sval, sval: "undefined"}
 	}
-	return Undefined
 }
 
 func (a Value) tofval() Value {
