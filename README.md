@@ -21,11 +21,15 @@ $ go get github.com/tidwall/expr
 
 ### Basic expressions
 
+For example:
+
 ```js
 1 + 1
 (10 * 5 <= 50) && (50 > 100 || 8 >= 7)
 1e+10 > 0 ? "big" : "small"
 ```
+
+In Go, you're code may look like the following.
 
 ```go
 res, _ := expr.Eval(`1 + 1`, nil)
@@ -47,6 +51,8 @@ Using a custom evaluation extender we can extend the eval function to support
 arithmetic and comparisons on the `time.Time` type. And, we'll also provide
 some extra user data that exposes extra variables to the evaluator.
 
+Expressions such as:
+
 ```js
 timestamp
 timestamp - $1h
@@ -54,6 +60,8 @@ now + $24h
 timestamp < now - $24h ? "old" : "new"
 ((minX + maxX) / 2) + "," + ((minY + maxY) / 2)
 ```
+
+In Go, you would provide a custom `Extender` to the `Eval` function.
 
 ```go
 // Create a user data map that can be referenced by the Eval function.
