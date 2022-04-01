@@ -213,6 +213,17 @@ var testTable = []string{
 	(`0xFFFFFFFF+1`), (`4294967296`),
 	(`0xFFFFFFFFFFFFFFFF`), (`18446744073709552000`),
 	(`0xFFFFFFFFFFFFFFFF+1`), (`18446744073709552000`),
+	(`true ? 1 : 2`), (`1`),
+	(`false ? 1 : 2`), (`2`),
+	(`false ? 1 : true ? 2 : 3`), (`2`),
+	(`false ? 1 : false ? 2 : 3`), (`3`),
+	(`5*2-10 ? 1 : (3*3-9 < 1 || 6+6-12 ? 8 : false) ? 2 : 3`), (`2`),
+	(`(false ? 1 : 2`), (`SyntaxError`),
+	(`(false) ? (0xTT) : (0xTT)`), (`SyntaxError`),
+	(`(true) ? (0xTT) : (0xTT)`), (`SyntaxError`),
+	(`(true) ? (0xTT) : (0xTT`), (`SyntaxError`),
+	(`(true) ? (0xTT) 123`), (`SyntaxError`),
+	(`(0xTT) ? (0xTT) : 123`), (`SyntaxError`),
 }
 
 func simpleExtendorOptions(

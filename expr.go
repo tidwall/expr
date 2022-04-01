@@ -626,7 +626,7 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 		if expr[len(expr)-1] != ')' {
 			return Undefined, errSyntax(pos)
 		}
-		return evalAuto(stepLogicals, expr[1:len(expr)-1], pos+1, steps, opts)
+		return evalExpr(expr[1:len(expr)-1], pos+1, steps, opts)
 	}
 	if opts != nil && opts.Extender != nil {
 		res, err := opts.Extender.Eval(expr, opts.UserData)
@@ -806,7 +806,7 @@ func sum(left Value, op byte, expr string, neg, end bool, pos, steps int,
 		return Undefined, errSyntax(pos)
 	}
 	// parse factors of expression
-	right, err := evalAuto(stepFacts, expr, pos, steps, opts)
+	right, err := evalAuto(stepSums<<1, expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -895,7 +895,7 @@ func comp(left Value, op byte, expr string, pos, steps int, opts *Options,
 		expr, pos = trim(expr, pos+1)
 	}
 	// parse sums of expression
-	right, err := evalAuto(stepSums, expr, pos, steps, opts)
+	right, err := evalAuto(stepComps<<1, expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -974,8 +974,7 @@ func logical(left Value, op byte, expr string, pos, steps int, opts *Options,
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	// parse comps of expression
-	right, err := evalAuto(stepComps, expr, pos, steps, opts)
+	right, err := evalAuto(stepLogicals<<1, expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1018,9 +1017,54 @@ func evalLogicals(expr string, pos, steps int, opts *Options) (Value, error) {
 	return logical(left, op, expr[s:], pos+s, steps, opts)
 }
 
+func evalTerns(expr string, pos, steps int, opts *Options) (Value, error) {
+	var cond string
+	var s int
+	var depth int
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '?':
+			if depth == 0 {
+				cond = expr[:i]
+				s = i + 1
+			}
+			depth++
+		case ':':
+			depth--
+			if depth == 0 {
+				left := expr[s:i]
+				right := expr[i+1:]
+				res, err := evalExpr(cond, pos, steps, opts)
+				if err != nil {
+					return Undefined, err
+				}
+				if res.Bool() {
+					return evalExpr(left, pos+s, steps, opts)
+				}
+				return evalExpr(right, pos+i+1, steps, opts)
+			}
+		case '(', '[', '{', '"':
+			g, err := readGroup(expr[i:], pos+i)
+			if err != nil {
+				return Undefined, err
+			}
+			i = i + len(g) - 1
+		}
+	}
+	if depth == 0 {
+		return evalAuto(stepTerns<<1, expr, pos, steps, opts)
+	}
+	return Undefined, errSyntax(pos)
+}
+
 func evalAuto(step int, expr string, pos, steps int, opts *Options,
 ) (Value, error) {
 	switch step {
+	case stepTerns:
+		if (steps & stepTerns) == stepTerns {
+			return evalTerns(expr, pos, steps, opts)
+		}
+		fallthrough
 	case stepLogicals:
 		if (steps & stepLogicals) == stepLogicals {
 			return evalLogicals(expr, pos, steps, opts)
@@ -1050,8 +1094,9 @@ func evalAuto(step int, expr string, pos, steps int, opts *Options,
 }
 
 func evalExpr(expr string, pos, steps int, opts *Options) (Value, error) {
-	// logicals >> comps >> sums >> facts >> atoms
-	return evalAuto(stepLogicals, expr, 0, steps, opts)
+	// terns >> logicals >> comps >> sums >> facts >> atoms
+	return evalAuto(stepTerns, expr, 0, steps, opts)
+	// return evalAuto(stepLogicals, expr, 0, steps, opts)
 }
 
 type Extender interface {
@@ -1100,13 +1145,18 @@ func (e *simpleExtender) Op(op Op, a, b Value, udata any) (Value, error) {
 }
 
 const (
-	stepLogicals = 1
-	stepComps    = 2
-	stepSums     = 4
-	stepFacts    = 8
+	_ = 1 << iota
+	stepTerns
+	stepLogicals
+	stepComps
+	stepSums
+	stepFacts
 )
 
 var opSteps = [256]byte{
+	'?': stepTerns,
+	':': stepTerns,
+
 	'&': stepLogicals,
 	'|': stepLogicals,
 
