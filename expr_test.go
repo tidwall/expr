@@ -58,8 +58,8 @@ var testTable = []string{
 	(`(1 < 2 && 3 > 2) + 10`), (`11`),
 	(`999 + 777 * (888 + (0.5 + 1.5)) * (0.5 + true)`), (`1038294`),
 	(`999 + 777 * (888 / 0.456) / true`), (`1514104.2631578946`),
-	(`999 + 777 * (888 / 0.456) / 0`), (`+Inf`),
-	(`999 + 777 * (888 / 0.456) / 0`), (`+Inf`),
+	(`999 + 777 * (888 / 0.456) / 0`), (`Infinity`),
+	(`999 + 777 * (888 / 0.456) / 0`), (`Infinity`),
 	(`1.0e1`), (`10`),
 	(`1.0E1`), (`10`),
 	(`1.0e+1`), (`10`),
@@ -205,6 +205,10 @@ var testTable = []string{
 	(`-cust(999)`), (`OperatorError: not this time`), // special error
 	(`cust(-90909090) + cust(-90909090)`), (`OperatorError: undefined`),
 	(`cust(-80808080) + cust(-80808080)`), (`OperatorError: bad news`),
+	(`0x1`), (`1`),
+	(`0xZ`), (`SyntaxError`),
+	(`Infinity`), (`Infinity`),
+	(`-Infinity`), (`-Infinity`),
 }
 
 func simpleExtendorOptions(

@@ -419,8 +419,17 @@ func (a Value) tostr() Value {
 	case bval:
 		return Value{kind: sval, sval: strconv.FormatBool(a.bval)}
 	case fval:
-		return Value{kind: sval,
-			sval: strconv.FormatFloat(a.fval, 'f', -1, 64)}
+		var s string
+		if math.IsInf(a.fval, 0) {
+			if a.fval < 0 {
+				s = "-Infinity"
+			} else {
+				s = "Infinity"
+			}
+		} else {
+			s = strconv.FormatFloat(a.fval, 'f', -1, 64)
+		}
+		return Value{kind: sval, sval: s}
 	case ival:
 		return Value{kind: sval, sval: strconv.FormatInt(a.ival, 10)}
 	case uval:
@@ -575,7 +584,16 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 		return Undefined, errSyntax(pos)
 	}
 	switch expr[0] {
-	case '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+	case '0':
+		if len(expr) > 1 && (expr[1] == 'x' || expr[1] == 'X') {
+			x, err := strconv.ParseUint(expr[2:], 16, 64)
+			if err != nil {
+				return Undefined, errSyntax(pos)
+			}
+			return Uint64(x), nil
+		}
+		fallthrough
+	case '.', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		x, err := strconv.ParseFloat(expr, 64)
 		if err != nil {
 			return Undefined, errSyntax(pos)
@@ -598,6 +616,10 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 	case 'N':
 		if expr == "NaN" {
 			return Float64(math.NaN()), nil
+		}
+	case 'I':
+		if expr == "Infinity" {
+			return Float64(math.Inf(+1)), nil
 		}
 	case '(':
 		// grouping
