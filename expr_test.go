@@ -15,6 +15,11 @@ import (
 )
 
 var testTable = []string{
+	(``), (``),
+	(` `), (``),
+	(`()`), (`SyntaxError`),
+	(`"\"`), (`SyntaxError`),
+	(`1`), (`1`),
 	(`-1`), (`-1`),
 	(`- 1`), (`-1`),
 	(` - 1`), (`-1`),
@@ -29,18 +34,23 @@ var testTable = []string{
 	(` + +-1`), (`-1`),
 	(` + +-+ +- -1`), (`-1`),
 	(`-+-+-+-1 - 2`), (`-1`),
+	(`(`), (`SyntaxError`),
+	(`(1`), (`SyntaxError`),
+	(`(1)`), (`1`),
+	(`( 1 )`), (`1`),
 	(`--1`), (`SyntaxError`),
 	(`1--`), (`SyntaxError`),
 	(`1++`), (`SyntaxError`),
 	(`++1`), (`SyntaxError`),
 	(`-+1`), (`-1`),
-	(``), (``),
-	(`1`), (`1`),
 	(`"hello"`), (`hello`),
 	(`"hel\nlo"`), ("hel\nlo"),
 	(`"hi"+1`), (`hi1`),
 	(`"hi"-1`), (`NaN`),
 	(`1+1-0.5`), (`1.5`),
+	(`2*4`), (`8`),
+	(`(2*4`), (`SyntaxError`),
+	(`"2*4`), (`SyntaxError`),
 	(`1 > 2`), (`false`),
 	(`1 > 2 || 3 > 2`), (`true`),
 	(`2 > 3`), (`false`),
@@ -151,7 +161,8 @@ var testTable = []string{
 	(`100 + blank_err`), (`ReferenceError: blank_err is not defined`),
 	(`100 + custom_err`), (`ReferenceError: hiya`),
 	(`"a \u\"567"`), (`SyntaxError`),
-	(`(hello) + (jello`), (`SyntaxError`),
+	(`(hello) + (jello`), (`ReferenceError: hello is not defined`),
+	(`(1) + (jello`), (`SyntaxError`),
 	(`(1) && `), (`SyntaxError`),
 	(` && (1)`), (`SyntaxError`),
 	(`1 < (}2) < (1)`), (`SyntaxError`),
@@ -477,17 +488,6 @@ func (t thing) String() string {
 	return strconv.FormatFloat(float64(t), 'f', -1, 64)
 }
 
-func TestMust(t *testing.T) {
-	must(nil)
-	defer func() {
-		err := recover()
-		if err == nil {
-			t.Fatal("expected error got nil")
-		}
-	}()
-	must(errors.New("error"))
-}
-
 func FuzzExpr(f *testing.F) {
 	// test for panics
 	for i := 0; i < len(testTable)-1; i += 2 {
@@ -499,6 +499,21 @@ func FuzzExpr(f *testing.F) {
 	f.Fuzz(func(t *testing.T, expr string) {
 		Eval(expr, nil)
 	})
+}
+
+func TestParseString(t *testing.T) {
+	if _, ok := parseString(``); ok {
+		t.Fatal()
+	}
+	if _, ok := parseString(`"`); ok {
+		t.Fatal()
+	}
+	if _, ok := parseString(`"\`); ok {
+		t.Fatal()
+	}
+	if _, ok := parseString(`"1"1`); ok {
+		t.Fatal()
+	}
 }
 
 func BenchmarkSimpleEval(b *testing.B) {

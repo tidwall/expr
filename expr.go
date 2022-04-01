@@ -59,9 +59,7 @@ func CharPosOfErr(err error) int {
 	return -1
 }
 
-// Undefined is an empty (zero) value.
-// The should be returned from the Options.Eval and Options.Op for
-// undefined/unknown values and operators.
+// Undefined value
 var Undefined Value
 
 // Op is an operator for Custom values used for the Options.Op function.
@@ -571,7 +569,11 @@ func closech(open byte) byte {
 	return open
 }
 
-func evalAtom(expr string, pos int, opts *Options) (Value, error) {
+func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
+	expr, pos = trim(expr, pos)
+	if len(expr) == 0 {
+		return Undefined, errSyntax(pos)
+	}
 	switch expr[0] {
 	case '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 		x, err := strconv.ParseFloat(expr, 64)
@@ -597,6 +599,12 @@ func evalAtom(expr string, pos int, opts *Options) (Value, error) {
 		if expr == "NaN" {
 			return Float64(math.NaN()), nil
 		}
+	case '(':
+		// grouping
+		if expr[len(expr)-1] != ')' {
+			return Undefined, errSyntax(pos)
+		}
+		return evalAuto(stepLogicals, expr[1:len(expr)-1], pos+1, steps, opts)
 	}
 	if opts != nil && opts.Extender != nil {
 		res, err := opts.Extender.Eval(expr, opts.UserData)
@@ -613,14 +621,8 @@ func evalAtom(expr string, pos int, opts *Options) (Value, error) {
 
 // parseString parses a Javascript encoded string.
 // Adapted from the GJSON project.
-// The input data is already checked for enclosed quotes (including escaped
-// quotes, thus there are three commented out conditions.
-// If this is from an untrusted reader then uncomment those blocks.
 func parseString(data string) (out string, ok bool) {
 	var esc bool
-	// if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
-	// 	return "", false
-	// }
 	for i := 1; i < len(data); i++ {
 		if data[i] < ' ' {
 			break
@@ -628,9 +630,9 @@ func parseString(data string) (out string, ok bool) {
 		if data[i] == '\\' {
 			esc = true
 			i++
-			// if i == len(data) {
-			// 	return "", false
-			// }
+			if i == len(data) {
+				return "", false
+			}
 			switch data[i] {
 			default:
 				return "", false
@@ -647,9 +649,9 @@ func parseString(data string) (out string, ok bool) {
 				}
 			}
 		} else if data[i] == '"' {
-			// if i != len(data)-1 {
-			// 	return "", false
-			// }
+			if i != len(data)-1 {
+				return "", false
+			}
 			s := data[1:i]
 			if esc {
 				s = unescapeString(s)
@@ -718,8 +720,7 @@ func unescapeString(data string) string {
 	return string(str)
 }
 
-func fact(left Value, op byte, expr string,
-	pos int, opts *Options,
+func fact(left Value, op byte, expr string, pos, steps int, opts *Options,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
@@ -730,10 +731,10 @@ func fact(left Value, op byte, expr string,
 	switch expr[0] {
 	case '(':
 		// parse subexpression
-		right, err = evalExpr(expr[1:len(expr)-1], pos+1, opts)
+		right, err = evalExpr(expr[1:len(expr)-1], pos+1, steps, opts)
 	default:
 		// atom
-		right, err = evalAtom(expr, pos, opts)
+		right, err = evalAtom(expr, pos, steps, opts)
 	}
 	if err != nil {
 		return Undefined, err
@@ -750,7 +751,7 @@ func fact(left Value, op byte, expr string,
 	}
 }
 
-func evalFacts(expr string, pos int, opts *Options) (Value, error) {
+func evalFacts(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -758,7 +759,7 @@ func evalFacts(expr string, pos int, opts *Options) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '*', '/', '%':
-			left, err = fact(left, op, expr[s:i], pos+s, opts)
+			left, err = fact(left, op, expr[s:i], pos+s, steps, opts)
 			if err != nil {
 				return Undefined, err
 			}
@@ -766,16 +767,16 @@ func evalFacts(expr string, pos int, opts *Options) (Value, error) {
 			s = i + 1
 		case '(', '[', '{', '"':
 			g, err := readGroup(expr[i:], pos+i)
-			// There should never be a group error because groups are parsed in
-			// the evalLogical phase.
-			must(err)
+			if err != nil {
+				return Undefined, err
+			}
 			i = i + len(g) - 1
 		}
 	}
-	return fact(left, op, expr[s:], pos+s, opts)
+	return fact(left, op, expr[s:], pos+s, steps, opts)
 }
 
-func sum(left Value, op byte, expr string, neg, end bool, pos int,
+func sum(left Value, op byte, expr string, neg, end bool, pos, steps int,
 	opts *Options,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
@@ -783,7 +784,7 @@ func sum(left Value, op byte, expr string, neg, end bool, pos int,
 		return Undefined, errSyntax(pos)
 	}
 	// parse factors of expression
-	right, err := evalFacts(expr, pos, opts)
+	right, err := evalAuto(stepFacts, expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -804,7 +805,7 @@ func sum(left Value, op byte, expr string, neg, end bool, pos int,
 	}
 }
 
-func evalSums(expr string, pos int, opts *Options) (Value, error) {
+func evalSums(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -825,7 +826,8 @@ func evalSums(expr string, pos int, opts *Options) (Value, error) {
 				s = i + 1
 				continue
 			}
-			left, err = sum(left, op, expr[s:i], neg, false, pos+s, opts)
+			left, err = sum(left, op, expr[s:i], neg, false, pos+s, steps,
+				opts)
 			if err != nil {
 				return Undefined, err
 			}
@@ -835,9 +837,9 @@ func evalSums(expr string, pos int, opts *Options) (Value, error) {
 			neg = false
 		case '(', '[', '{', '"':
 			g, err := readGroup(expr[i:], pos+i)
-			// There should never be a group error because groups are parsed in
-			// the evalLogical phase.
-			must(err)
+			if err != nil {
+				return Undefined, err
+			}
 			i = i + len(g) - 1
 			fill = true
 		default:
@@ -846,10 +848,10 @@ func evalSums(expr string, pos int, opts *Options) (Value, error) {
 			}
 		}
 	}
-	return sum(left, op, expr[s:], neg, true, pos+s, opts)
+	return sum(left, op, expr[s:], neg, true, pos+s, steps, opts)
 }
 
-func comp(left Value, op byte, expr string, pos int, opts *Options,
+func comp(left Value, op byte, expr string, pos, steps int, opts *Options,
 ) (Value, error) {
 	var neg bool
 	var boolit bool
@@ -867,7 +869,7 @@ func comp(left Value, op byte, expr string, pos int, opts *Options,
 		expr, pos = trim(expr, pos+1)
 	}
 	// parse sums of expression
-	right, err := evalSums(expr, pos, opts)
+	right, err := evalAuto(stepSums, expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -895,7 +897,7 @@ func comp(left Value, op byte, expr string, pos int, opts *Options,
 	}
 }
 
-func evalComps(expr string, pos int, opts *Options) (Value, error) {
+func evalComps(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -922,7 +924,7 @@ func evalComps(expr string, pos int, opts *Options) (Value, error) {
 				}
 				opsz++
 			}
-			left, err = comp(left, op, expr[s:i], pos+s, opts)
+			left, err = comp(left, op, expr[s:i], pos+s, steps, opts)
 			if err != nil {
 				return Undefined, err
 			}
@@ -931,24 +933,23 @@ func evalComps(expr string, pos int, opts *Options) (Value, error) {
 			s = i + 1
 		case '(', '[', '{', '"':
 			g, err := readGroup(expr[i:], pos+i)
-			// There should never be a group error because groups are parsed in
-			// the evalLogical phase.
-			must(err)
+			if err != nil {
+				return Undefined, err
+			}
 			i = i + len(g) - 1
 		}
 	}
-	return comp(left, op, expr[s:], pos+s, opts)
+	return comp(left, op, expr[s:], pos+s, steps, opts)
 }
 
-func logical(left Value, op byte, expr string, pos int,
-	opts *Options,
+func logical(left Value, op byte, expr string, pos, steps int, opts *Options,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
 	// parse comps of expression
-	right, err := evalComps(expr, pos, opts)
+	right, err := evalAuto(stepComps, expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -962,7 +963,7 @@ func logical(left Value, op byte, expr string, pos int,
 	}
 }
 
-func evalLogicals(expr string, pos int, opts *Options) (Value, error) {
+func evalLogicals(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -973,7 +974,7 @@ func evalLogicals(expr string, pos int, opts *Options) (Value, error) {
 			if i == len(expr)-1 || expr[i+1] != expr[i] {
 				return Undefined, errSyntax(pos + i)
 			}
-			left, err = logical(left, op, expr[s:i], pos+s, opts)
+			left, err = logical(left, op, expr[s:i], pos+s, steps, opts)
 			if err != nil {
 				return Undefined, err
 			}
@@ -988,12 +989,43 @@ func evalLogicals(expr string, pos int, opts *Options) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return logical(left, op, expr[s:], pos+s, opts)
+	return logical(left, op, expr[s:], pos+s, steps, opts)
 }
 
-func evalExpr(expr string, pos int, opts *Options) (Value, error) {
+func evalAuto(step int, expr string, pos, steps int, opts *Options,
+) (Value, error) {
+	switch step {
+	case stepLogicals:
+		if (steps & stepLogicals) == stepLogicals {
+			return evalLogicals(expr, pos, steps, opts)
+		}
+		fallthrough
+	case stepComps:
+		if (steps & stepComps) == stepComps {
+			return evalComps(expr, pos, steps, opts)
+		}
+		fallthrough
+	case stepSums:
+		if (steps & stepSums) == stepSums {
+			return evalSums(expr, pos, steps, opts)
+		}
+		fallthrough
+	case stepFacts:
+		if (steps & stepFacts) == stepFacts {
+			return evalFacts(expr, pos, steps, opts)
+		}
+		fallthrough
+	default:
+		return evalAtom(expr, pos, steps, opts)
+	}
+
+	// return Undefined, errInternal(
+	// fmt.Errorf("unsupported step '%d'", step), pos)
+}
+
+func evalExpr(expr string, pos, steps int, opts *Options) (Value, error) {
 	// logicals >> comps >> sums >> facts >> atoms
-	return evalLogicals(expr, 0, opts)
+	return evalAuto(stepLogicals, expr, 0, steps, opts)
 }
 
 type Extender interface {
@@ -1041,14 +1073,43 @@ func (e *simpleExtender) Op(op Op, a, b Value, udata any) (Value, error) {
 	return e.op(op, a, b, udata)
 }
 
+const (
+	stepLogicals = 1
+	stepComps    = 2
+	stepSums     = 4
+	stepFacts    = 8
+)
+
+var opSteps = [256]byte{
+	'&': stepLogicals,
+	'|': stepLogicals,
+
+	'+': stepSums,
+	'-': stepSums,
+
+	'<': stepComps,
+	'>': stepComps,
+	'=': stepComps,
+	'!': stepComps,
+
+	'*': stepFacts,
+	'/': stepFacts,
+	'%': stepFacts,
+}
+
 // Eval evaluates an expression and returns the Result.
 func Eval(expr string, opts *Options) (Value, error) {
-	r, err := evalExpr(expr, 0, opts)
+	var pos int
+	expr, pos = trim(expr, 0)
+	if len(expr) == 0 {
+		return Undefined, nil
+	}
+	var steps int
+	for i := 0; i < len(expr); i++ {
+		steps |= int(opSteps[expr[i]])
+	}
+	r, err := evalExpr(expr, pos, steps, opts)
 	if err != nil {
-		// check if the error was because the expression was empty
-		if s, _ := trim(expr, 0); s == "" {
-			err = nil
-		}
 		return Undefined, err
 	}
 	return r, nil
@@ -1139,10 +1200,4 @@ func trim(s string, pos int) (string, int) {
 		s = s[:len(s)-1]
 	}
 	return s, pos
-}
-
-func must(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
