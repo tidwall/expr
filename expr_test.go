@@ -209,6 +209,10 @@ var testTable = []string{
 	(`0xZ`), (`SyntaxError`),
 	(`Infinity`), (`Infinity`),
 	(`-Infinity`), (`-Infinity`),
+	(`0xFFFFFFFF`), (`4294967295`),
+	(`0xFFFFFFFF+1`), (`4294967296`),
+	(`0xFFFFFFFFFFFFFFFF`), (`18446744073709552000`),
+	(`0xFFFFFFFFFFFFFFFF+1`), (`18446744073709552000`),
 }
 
 func simpleExtendorOptions(

@@ -590,7 +590,7 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 			if err != nil {
 				return Undefined, errSyntax(pos)
 			}
-			return Uint64(x), nil
+			return Float64(float64(x)), nil
 		}
 		fallthrough
 	case '.', '1', '2', '3', '4', '5', '6', '7', '8', '9':
