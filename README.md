@@ -48,10 +48,10 @@ fmt.Println(res)
 ### Advanced expressions 
 
 Using a custom evaluation extender we can extend the eval function to support 
-arithmetic and comparisons on the `time.Time` type. And, we'll also provide
-some extra user data that exposes extra variables to the evaluator.
+arithmetic and comparisons on custom types, such as `time.Time` that is built into Go.
+We can also provide some extra user data that exposes extra variables to the evaluator.
 
-Expressions such as:
+Example expressions:
 
 ```js
 timestamp
