@@ -551,13 +551,13 @@ func TestParseString(t *testing.T) {
 	}
 }
 
-func BenchmarkSimpleEval(b *testing.B) {
+func BenchmarkSimpleFact(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Eval("5 * 10", nil)
 	}
 }
 
-func BenchmarkSimpleReference(b *testing.B) {
+func BenchmarkSimpleFactRef(b *testing.B) {
 	opts := simpleExtendorOptions(nil,
 		func(expr string, _ interface{}) (Value, error) {
 			if expr == "ten" {
@@ -568,6 +568,26 @@ func BenchmarkSimpleReference(b *testing.B) {
 	)
 	for i := 0; i < b.N; i++ {
 		Eval("5 * ten", &opts)
+	}
+}
+
+func BenchmarkSimpleComp(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		Eval("5 < 10", nil)
+	}
+}
+
+func BenchmarkSimpleCompRef(b *testing.B) {
+	opts := simpleExtendorOptions(nil,
+		func(expr string, _ interface{}) (Value, error) {
+			if expr == "ten" {
+				return Float64(10), nil
+			}
+			return Undefined, nil
+		}, nil,
+	)
+	for i := 0; i < b.N; i++ {
+		Eval("5 < ten", &opts)
 	}
 }
 

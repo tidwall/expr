@@ -940,14 +940,22 @@ func comp(left Value, op byte, expr string, pos, steps int, opts *Options,
 	}
 }
 
+var compChars = [256]byte{
+	'<': 1, '>': 1, '=': 1, '!': 1,
+	'(': 2, '[': 2, '{': 2, '"': 2,
+}
+
 func evalComps(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
 	var op byte
 	for i := 0; i < len(expr); i++ {
-		switch expr[i] {
-		case '<', '>', '=', '!':
+		is := compChars[expr[i]]
+		if is == 0 {
+			continue
+		}
+		if is == 1 { // '<', '>', '=', '!'
 			opch := expr[i]
 			opsz := 1
 			switch opch {
@@ -974,7 +982,7 @@ func evalComps(expr string, pos, steps int, opts *Options) (Value, error) {
 			op = opch
 			i = i + opsz - 1
 			s = i + 1
-		case '(', '[', '{', '"':
+		} else { // '(', '[', '{', '"'
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
