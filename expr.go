@@ -766,16 +766,7 @@ func fact(left Value, op byte, expr string, pos, steps int, opts *Options,
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	var right Value
-	var err error
-	switch expr[0] {
-	case '(':
-		// parse subexpression
-		right, err = evalExpr(expr[1:len(expr)-1], pos+1, steps, opts)
-	default:
-		// atom
-		right, err = evalAtom(expr, pos, steps, opts)
-	}
+	right, err := evalAtom(expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -791,21 +782,29 @@ func fact(left Value, op byte, expr string, pos, steps int, opts *Options,
 	}
 }
 
+var factChars = [256]byte{
+	'*': 1, '/': 1, '%': 1,
+	'(': 2, '[': 2, '{': 2, '"': 2,
+}
+
 func evalFacts(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
 	var op byte
 	for i := 0; i < len(expr); i++ {
-		switch expr[i] {
-		case '*', '/', '%':
+		is := factChars[expr[i]]
+		if is == 0 {
+			continue
+		}
+		if is == 1 { // '*' '/' '%'
 			left, err = fact(left, op, expr[s:i], pos+s, steps, opts)
 			if err != nil {
 				return Undefined, err
 			}
 			op = expr[i]
 			s = i + 1
-		case '(', '[', '{', '"':
+		} else { // '(', '[', '{', '"'
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
@@ -1106,15 +1105,11 @@ func evalAuto(step int, expr string, pos, steps int, opts *Options,
 	default:
 		return evalAtom(expr, pos, steps, opts)
 	}
-
-	// return Undefined, errInternal(
-	// fmt.Errorf("unsupported step '%d'", step), pos)
 }
 
 func evalExpr(expr string, pos, steps int, opts *Options) (Value, error) {
 	// terns >> logicals >> comps >> sums >> facts >> atoms
 	return evalAuto(stepTerns, expr, 0, steps, opts)
-	// return evalAuto(stepLogicals, expr, 0, steps, opts)
 }
 
 type Extender interface {
@@ -1198,6 +1193,8 @@ func Eval(expr string, opts *Options) (Value, error) {
 	if len(expr) == 0 {
 		return Undefined, nil
 	}
+	// Determine which steps are (possibly) needed by scanning every byte in
+	// the input expression and looking for potential candidate characters.
 	var steps int
 	for i := 0; i < len(expr); i++ {
 		steps |= int(opSteps[expr[i]])
@@ -1276,14 +1273,10 @@ func squash(data string) (string, bool) {
 var space = [256]uint8{'\t': 1, '\n': 1, '\v': 1, '\f': 1, '\r': 1, ' ': 1}
 
 func isspace(c byte) bool {
-	switch c {
-	case '\t', '\n', '\v', '\f', '\r', ' ':
-		return true
-	}
-	return false
+	return space[c] != 0
 }
 
-// trim a simple ascii string along with position counting.
+// trim a simple ascii string along with doing position counting.
 // This is a tad bit faster than strings.TrimSpace.
 func trim(s string, pos int) (string, int) {
 	for len(s) > 0 && space[s[0]] == 1 {
