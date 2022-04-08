@@ -115,6 +115,8 @@ func (op Op) String() string {
 		return "&&"
 	case OpOr:
 		return "||"
+	case OpCoal:
+		return "??"
 	default:
 		return ""
 	}

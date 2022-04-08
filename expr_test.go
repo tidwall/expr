@@ -493,6 +493,9 @@ func TestEval(t *testing.T) {
 	if OpOr.String() != "||" {
 		t.Fatal()
 	}
+	if OpCoal.String() != "??" {
+		t.Fatal()
+	}
 	if Op(-1).String() != "" {
 		t.Fatal()
 	}
