@@ -36,6 +36,7 @@ func errReference(err error, pos int) error {
 }
 
 var ErrUndefined = errors.New("undefined")
+var ErrStop = errors.New("stop")
 
 type int64er interface{ Int64() int64 }
 type uint64er interface{ Uint64() uint64 }
@@ -660,7 +661,7 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 		if expr[len(expr)-1] != ')' {
 			return Undefined, errSyntax(pos)
 		}
-		return evalExpr(expr[1:len(expr)-1], pos+1, steps, opts)
+		return evalExpr(expr[1:len(expr)-1], pos+1, steps, nil, opts)
 	}
 	if opts != nil && opts.Extender != nil {
 		res, err := opts.Extender.Eval(expr, opts.UserData)
@@ -899,7 +900,7 @@ func sum(left Value, op byte, expr string, neg, end bool, pos, steps int,
 		return Undefined, errSyntax(pos)
 	}
 	// parse factors of expression
-	right, err := evalAuto(stepSums<<1, expr, pos, steps, opts)
+	right, err := evalAuto(stepSums<<1, expr, pos, steps, nil, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -988,7 +989,7 @@ func comp(left Value, op byte, expr string, pos, steps int, opts *Options,
 		expr, pos = trim(expr, pos+1)
 	}
 	// parse sums of expression
-	right, err := evalAuto(stepComps<<1, expr, pos, steps, opts)
+	right, err := evalAuto(stepComps<<1, expr, pos, steps, nil, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1067,7 +1068,7 @@ func logicalAnd(left Value, op byte, expr string, pos, steps int, opts *Options,
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepLogicalAnd<<1, expr, pos, steps, opts)
+	right, err := evalAuto(stepLogicalAnd<<1, expr, pos, steps, nil, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1114,7 +1115,7 @@ func logicalOr(left Value, op byte, expr string, pos, steps int, opts *Options,
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepLogicalOr<<1, expr, pos, steps, opts)
+	right, err := evalAuto(stepLogicalOr<<1, expr, pos, steps, nil, opts)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1179,14 +1180,14 @@ func evalTerns(expr string, pos, steps int, opts *Options) (Value, error) {
 			if depth == 0 {
 				left := expr[s:i]
 				right := expr[i+1:]
-				res, err := evalExpr(cond, pos, steps, opts)
+				res, err := evalExpr(cond, pos, steps, nil, opts)
 				if err != nil {
 					return Undefined, err
 				}
 				if res.Bool() {
-					return evalExpr(left, pos+s, steps, opts)
+					return evalExpr(left, pos+s, steps, nil, opts)
 				}
-				return evalExpr(right, pos+i+1, steps, opts)
+				return evalExpr(right, pos+i+1, steps, nil, opts)
 			}
 		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
@@ -1197,14 +1198,64 @@ func evalTerns(expr string, pos, steps int, opts *Options) (Value, error) {
 		}
 	}
 	if depth == 0 {
-		return evalAuto(stepTerns<<1, expr, pos, steps, opts)
+		return evalAuto(stepTerns<<1, expr, pos, steps, nil, opts)
 	}
 	return Undefined, errSyntax(pos)
 }
 
-func evalAuto(step int, expr string, pos, steps int, opts *Options,
+func evalComma(expr string, pos, steps int, iter func(value Value) error,
+	opts *Options,
+) (Value, error) {
+	var s int
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case ',':
+			res, err := evalAuto(stepComma<<1, expr[s:i], pos+s, steps, nil,
+				opts)
+			if err != nil {
+				return Undefined, err
+			}
+			if iter != nil {
+				if err := iter(res); err != nil {
+					if err == ErrStop {
+						return res, nil
+					}
+					return Undefined, err
+				}
+			}
+			s = i + 1
+		case '(', '[', '{', '"', '\'', '`':
+			g, err := readGroup(expr[i:], pos+i)
+			if err != nil {
+				return Undefined, err
+			}
+			i = i + len(g) - 1
+		}
+	}
+	res, err := evalAuto(stepComma<<1, expr[s:], pos+s, steps, nil, opts)
+	if err != nil {
+		return Undefined, err
+	}
+	if iter != nil {
+		if err := iter(res); err != nil {
+			if err == ErrStop {
+				return res, nil
+			}
+			return Undefined, err
+		}
+	}
+	return res, nil
+}
+
+func evalAuto(step int, expr string, pos, steps int,
+	iter func(value Value) error, opts *Options,
 ) (Value, error) {
 	switch step {
+	case stepComma:
+		if (steps & stepComma) == stepComma {
+			return evalComma(expr, pos, steps, iter, opts)
+		}
+		fallthrough
 	case stepTerns:
 		if (steps & stepTerns) == stepTerns {
 			return evalTerns(expr, pos, steps, opts)
@@ -1240,9 +1291,11 @@ func evalAuto(step int, expr string, pos, steps int, opts *Options,
 	}
 }
 
-func evalExpr(expr string, pos, steps int, opts *Options) (Value, error) {
+func evalExpr(expr string, pos, steps int, iter func(value Value) error,
+	opts *Options,
+) (Value, error) {
 	// terns >> logicals >> comps >> sums >> facts >> atoms
-	return evalAuto(stepTerns, expr, 0, steps, opts)
+	return evalAuto(stepComma, expr, 0, steps, iter, opts)
 }
 
 type Extender interface {
@@ -1292,6 +1345,7 @@ func (e *simpleExtender) Op(op Op, a, b Value, udata any) (Value, error) {
 
 const (
 	_ = 1 << iota
+	stepComma
 	stepTerns
 	stepLogicalOr
 	stepLogicalAnd
@@ -1301,6 +1355,8 @@ const (
 )
 
 var opSteps = [256]byte{
+	',': stepComma,
+
 	'?': stepTerns | stepLogicalOr, // for ?: and ??
 	':': stepTerns,
 
@@ -1322,6 +1378,17 @@ var opSteps = [256]byte{
 
 // Eval evaluates an expression and returns the Result.
 func Eval(expr string, opts *Options) (Value, error) {
+	return EvalForEach(expr, nil, opts)
+}
+
+// EvalForEach iterates over a series of comma delimited expressions.
+// The last value in the series is returned.
+// Returning ErrStop will stop the iteration early and return the last known
+// value and nil as an error.
+// Returning any other error from iter will stop the iteration and return the
+// same error.
+func EvalForEach(expr string, iter func(value Value) error, opts *Options,
+) (Value, error) {
 	var pos int
 	expr, pos = trim(expr, 0)
 	if len(expr) == 0 {
@@ -1333,7 +1400,7 @@ func Eval(expr string, opts *Options) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		steps |= int(opSteps[expr[i]])
 	}
-	r, err := evalExpr(expr, pos, steps, opts)
+	r, err := evalExpr(expr, pos, steps, iter, opts)
 	if err != nil {
 		return Undefined, err
 	}

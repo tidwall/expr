@@ -267,6 +267,11 @@ var testTable = []string{
 	(`"\0"`), (string(byte(0))),
 	(`"\u{YY}"`), ("SyntaxError"),
 	(`"\u{FF`), ("SyntaxError"),
+	(`1,2,3,4`), ("4"),
+	(`1=,2,3,4`), ("SyntaxError"),
+	(`1(,2,3,4`), ("SyntaxError"),
+	(`1,2,3,(4+)`), ("SyntaxError"),
+	(`6<7 , 2>5 , 5`), ("5"),
 }
 
 func simpleExtendorOptions(
