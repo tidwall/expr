@@ -6,7 +6,7 @@ Expression evaluator for Go
 
 ## Features
 
-- Operators: `+` `-` `*` `/` `%` `!` `<` `<=` `==` `!=` `>` `>=` `?:`
+- Operators: `+` `-` `*` `/` `%` `!` `<` `<=` `==` `!=` `>` `>=` `?:` `??`
 - Types: String, Number, Boolean, and Custom types
 - Parenthesized expressions
 - Javascript-like syntax and automatic type conversions

@@ -237,6 +237,18 @@ var testTable = []string{
 	(`!!undefined`), (`false`),
 	(`!null`), (`true`),
 	(`!!null`), (`false`),
+	(`null??1`), (`1`),
+	(`null??0`), (`0`),
+	(`undefined??1+1`), (`2`),
+	(`undefined??0+1`), (`1`),
+	(`false??1+1`), (`false`),
+	(`true??1+1`), (`true`),
+	(`false??1+1`), (`false`),
+	(`true??1+1`), (`true`),
+	(`(false??1)+1`), (`1`),
+	(`(true??1)+1`), (`2`),
+	(`(undefined_noerr??undefined_noerr)+1`), (`NaN`),
+	(`(cust(1)??cust(2))+1`), (`2`),
 }
 
 func simpleExtendorOptions(
@@ -263,6 +275,9 @@ func TestEval(t *testing.T) {
 					return Undefined, err
 				}
 				return Uint64(x), nil
+			}
+			if expr == "undefined_noerr" {
+				return Undefined, nil
 			}
 			if expr == "blank_err" {
 				return Undefined, ErrUndefined
@@ -318,6 +333,11 @@ func TestEval(t *testing.T) {
 				return Bool(a.Bool() && b.Bool()), nil
 			case OpOr:
 				return Bool(a.Bool() || b.Bool()), nil
+			case OpCoal:
+				if !a.Bool() {
+					return b, nil
+				}
+				return a, nil
 			default:
 				return Undefined, ErrUndefined
 			}

@@ -70,20 +70,21 @@ var (
 type Op int
 
 const (
-	_     Op = iota
-	OpAdd    // +
-	OpSub    // -
-	OpMul    // *
-	OpDiv    // /
-	OpMod    // %
-	OpLt     // <
-	OpLte    // <=
-	OpGt     // >
-	OpGte    // >=
-	OpEq     // ==
-	OpNeq    // !=
-	OpAnd    // &&
-	OpOr     // ||
+	_      Op = iota
+	OpAdd     // +
+	OpSub     // -
+	OpMul     // *
+	OpDiv     // /
+	OpMod     // %
+	OpLt      // <
+	OpLte     // <=
+	OpGt      // >
+	OpGte     // >=
+	OpEq      // ==
+	OpNeq     // !=
+	OpAnd     // &&
+	OpOr      // ||
+	OpCoal    // ??
 )
 
 func (op Op) String() string {
@@ -417,6 +418,17 @@ func (a Value) or(b Value, pos int, opts *Options) (Value, error) {
 	}
 	a, b = a.tobool(), b.tobool()
 	return Value{kind: bval, bval: a.bval || b.bval}, nil
+}
+
+func (a Value) coalesce(b Value, pos int, opts *Options) (Value, error) {
+	if a.kind == cval || b.kind == cval {
+		return doOp(OpCoal, a, b, pos, opts)
+	}
+	switch a.kind {
+	case undf, nval:
+		return b, nil
+	}
+	return a, nil
 }
 
 func (a Value) tostr() Value {
@@ -995,38 +1007,36 @@ func evalComps(expr string, pos, steps int, opts *Options) (Value, error) {
 	return comp(left, op, expr[s:], pos+s, steps, opts)
 }
 
-func logical(left Value, op byte, expr string, pos, steps int, opts *Options,
+func logicalAnd(left Value, op byte, expr string, pos, steps int, opts *Options,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepLogicals<<1, expr, pos, steps, opts)
+	right, err := evalAuto(stepLogicalAnd<<1, expr, pos, steps, opts)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '&':
 		return left.and(right, pos, opts)
-	case '|':
-		return left.or(right, pos, opts)
 	default:
 		return right, nil
 	}
 }
 
-func evalLogicals(expr string, pos, steps int, opts *Options) (Value, error) {
+func evalLogicalAnd(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
 	var op byte
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
-		case '&', '|':
+		case '&':
 			if i == len(expr)-1 || expr[i+1] != expr[i] {
 				return Undefined, errSyntax(pos + i)
 			}
-			left, err = logical(left, op, expr[s:i], pos+s, steps, opts)
+			left, err = logicalAnd(left, op, expr[s:i], pos+s, steps, opts)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1041,7 +1051,56 @@ func evalLogicals(expr string, pos, steps int, opts *Options) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return logical(left, op, expr[s:], pos+s, steps, opts)
+	return logicalAnd(left, op, expr[s:], pos+s, steps, opts)
+}
+
+func logicalOr(left Value, op byte, expr string, pos, steps int, opts *Options,
+) (Value, error) {
+	expr, pos = trim(expr, pos)
+	if len(expr) == 0 {
+		return Undefined, errSyntax(pos)
+	}
+	right, err := evalAuto(stepLogicalOr<<1, expr, pos, steps, opts)
+	if err != nil {
+		return Undefined, err
+	}
+	switch op {
+	case '|':
+		return left.or(right, pos, opts)
+	case '?':
+		return left.coalesce(right, pos, opts)
+	default:
+		return right, nil
+	}
+}
+
+func evalLogicalOr(expr string, pos, steps int, opts *Options) (Value, error) {
+	var err error
+	var s int
+	var left Value
+	var op byte
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '|', '?':
+			if i == len(expr)-1 || expr[i+1] != expr[i] {
+				return Undefined, errSyntax(pos + i)
+			}
+			left, err = logicalOr(left, op, expr[s:i], pos+s, steps, opts)
+			if err != nil {
+				return Undefined, err
+			}
+			op = expr[i]
+			i++
+			s = i + 1
+		case '(', '[', '{', '"':
+			g, err := readGroup(expr[i:], pos+i)
+			if err != nil {
+				return Undefined, err
+			}
+			i = i + len(g) - 1
+		}
+	}
+	return logicalOr(left, op, expr[s:], pos+s, steps, opts)
 }
 
 func evalTerns(expr string, pos, steps int, opts *Options) (Value, error) {
@@ -1051,6 +1110,11 @@ func evalTerns(expr string, pos, steps int, opts *Options) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '?':
+			if i+1 < len(expr) && expr[i+1] == '?' {
+				// '??' operator
+				i++
+				continue
+			}
 			if depth == 0 {
 				cond = expr[:i]
 				s = i + 1
@@ -1092,9 +1156,14 @@ func evalAuto(step int, expr string, pos, steps int, opts *Options,
 			return evalTerns(expr, pos, steps, opts)
 		}
 		fallthrough
-	case stepLogicals:
-		if (steps & stepLogicals) == stepLogicals {
-			return evalLogicals(expr, pos, steps, opts)
+	case stepLogicalOr:
+		if (steps & stepLogicalOr) == stepLogicalOr {
+			return evalLogicalOr(expr, pos, steps, opts)
+		}
+		fallthrough
+	case stepLogicalAnd:
+		if (steps & stepLogicalAnd) == stepLogicalAnd {
+			return evalLogicalAnd(expr, pos, steps, opts)
 		}
 		fallthrough
 	case stepComps:
@@ -1170,18 +1239,19 @@ func (e *simpleExtender) Op(op Op, a, b Value, udata any) (Value, error) {
 const (
 	_ = 1 << iota
 	stepTerns
-	stepLogicals
+	stepLogicalOr
+	stepLogicalAnd
 	stepComps
 	stepSums
 	stepFacts
 )
 
 var opSteps = [256]byte{
-	'?': stepTerns,
+	'?': stepTerns | stepLogicalOr, // for ?: and ??
 	':': stepTerns,
 
-	'&': stepLogicals,
-	'|': stepLogicals,
+	'|': stepLogicalOr,
+	'&': stepLogicalAnd,
 
 	'+': stepSums,
 	'-': stepSums,
