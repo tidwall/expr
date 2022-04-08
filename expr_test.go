@@ -80,8 +80,13 @@ var testTable = []string{
 	(`1 = 2`), ("SyntaxError"),
 	(`1 == `), ("SyntaxError"),
 	(` == 1`), ("SyntaxError"),
-	(`"Example emoji, KO: \ud83d\udd13, \ud83c\udfc3 OK: \u2764\ufe0f "`), //>
-	(`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"Example emoji, KO: \ud83d\udd13, \ud83c\udfc3 OK: \u2764\ufe0f "`), (`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"Example emoji, KO: \u{d83d}\udd13, \ud83c\udfc3 OK: \u2764\ufe0f "`), (`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"Example emoji, KO: \u{d83d}\u{dd13}, \ud83c\udfc3 OK: \u2764\ufe0f "`), (`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"Example emoji, KO: \u{d83d}\u{dd13}, \u{d83c}\udfc3 OK: \u2764\ufe0f "`), (`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"Example emoji, KO: \u{d83d}\u{dd13}, \u{d83c}\u{dfc3} OK: \u2764\ufe0f "`), (`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"Example emoji, KO: \u{d83d}\u{dd13}, \u{d83c}\u{dfc3} OK: \u{2764}\ufe0f "`), (`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"Example emoji, KO: \u{d83d}\u{dd13}, \u{d83c}\u{dfc3} OK: \u{2764}\u{fe0f} "`), (`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
 	(`"KO: \xffsd"`), (`KO: ÿsd`),
 	(`"KO: \ud8"`), (`SyntaxError`),
 	(`"KO: \zd8"`), (`KO: zd8`),
@@ -254,6 +259,14 @@ var testTable = []string{
 	("`hello \"\" world`"), (`hello "" world`),
 	("'hello \\'\"\"\\a\\xFF\\p world'"), (`hello '""aÿp world`),
 	("'\\xFG'"), (`SyntaxError`),
+	(`"\u{A}"`), ("\n"),
+	(`"\u{21}"`), ("!"),
+	(`"\u{AFFF}"`), ("꿿"),
+	(`"\u{1f516}"`), ("🔖"),
+	(`"\v"`), ("\v"),
+	(`"\0"`), (string(byte(0))),
+	(`"\u{YY}"`), ("SyntaxError"),
+	(`"\u{FF`), ("SyntaxError"),
 }
 
 func simpleExtendorOptions(

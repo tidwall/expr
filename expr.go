@@ -695,22 +695,33 @@ func parseString(data string) (out string, ok bool) {
 			}
 			switch data[i] {
 			case 'u':
-				for j := 0; j < 4; j++ {
-					i++
-					if i >= len(data) ||
-						(!((data[i] >= '0' && data[i] <= '9') ||
-							(data[i] >= 'a' && data[i] <= 'f') ||
-							(data[i] >= 'A' && data[i] <= 'F'))) {
+				if i+1 < len(data) && data[i+1] == '{' {
+					i += 2
+					var end bool
+					for ; i < len(data); i++ {
+						if data[i] == '}' {
+							end = true
+							break
+						}
+						if !ishex(data[i]) {
+							return "", false
+						}
+					}
+					if !end {
 						return "", false
+					}
+				} else {
+					for j := 0; j < 4; j++ {
+						i++
+						if i >= len(data) || !ishex(data[i]) {
+							return "", false
+						}
 					}
 				}
 			case 'x':
 				for j := 0; j < 2; j++ {
 					i++
-					if i >= len(data) ||
-						(!((data[i] >= '0' && data[i] <= '9') ||
-							(data[i] >= 'a' && data[i] <= 'f') ||
-							(data[i] >= 'A' && data[i] <= 'F'))) {
+					if i >= len(data) || !ishex(data[i]) {
 						return "", false
 					}
 				}
@@ -730,9 +741,30 @@ func parseString(data string) (out string, ok bool) {
 }
 
 // runeit returns the rune from the the \uXXXX
-func runeit(data string) rune {
-	n, _ := strconv.ParseUint(data, 16, 64)
-	return rune(n)
+func runeit(data string, which byte) (r rune, n int) {
+	var x uint64
+	if which == 'x' {
+		x, _ = strconv.ParseUint(data[:2], 16, 64)
+		n = 2
+	} else {
+		var s, e int
+		if data[0] == '{' {
+			s = 1
+			n = len(data)
+			for i := 0; i < len(data); i++ {
+				if data[i] == '}' {
+					e = i
+					n = i + 1
+					break
+				}
+			}
+		} else {
+			e = 4
+			n = 4
+		}
+		x, _ = strconv.ParseUint(data[s:e], 16, 64)
+	}
+	return rune(x), n
 }
 
 // unescapeString unescapes a Javascript string.
@@ -748,6 +780,8 @@ func unescapeString(data string) string {
 		case data[i] == '\\':
 			i++
 			switch data[i] {
+			case '0':
+				str = append(str, 0)
 			case 'b':
 				str = append(str, '\b')
 			case 'f':
@@ -758,30 +792,31 @@ func unescapeString(data string) string {
 				str = append(str, '\r')
 			case 't':
 				str = append(str, '\t')
+			case 'v':
+				str = append(str, '\v')
 			case 'u':
-				r := runeit(data[i+1:][:4])
-				i += 5
+				i++
+				r, n := runeit(data[i:], 'u')
+				i += n
 				if utf16.IsSurrogate(r) {
 					// need another code
 					if len(data[i:]) >= 6 && data[i] == '\\' &&
 						data[i+1] == 'u' {
 						// we expect it to be correct so just consume it
-						r = utf16.DecodeRune(r, runeit(data[i+2:][:4]))
-						i += 6
+						i += 2
+						r2, n := runeit(data[i:], 'u')
+						i += n
+						r = utf16.DecodeRune(r, r2)
 					}
 				}
 				// provide enough space to encode the largest utf8 possible
-				str = append(str, 0, 0, 0, 0, 0, 0, 0, 0)
-				n := utf8.EncodeRune(str[len(str)-8:], r)
-				str = str[:len(str)-8+n]
+				str = appendRune(str, r)
 				i-- // backtrack index by one
 			case 'x':
-				r := runeit(data[i+1:][:2])
-				i += 3
-				// provide enough space to encode the largest utf8 possible
-				str = append(str, 0, 0, 0, 0, 0, 0, 0, 0)
-				n := utf8.EncodeRune(str[len(str)-8:], r)
-				str = str[:len(str)-8+n]
+				i++
+				r, n := runeit(data[i:], 'x')
+				i += n
+				str = appendRune(str, r)
 				i-- // backtrack index by one
 			default:
 				str = append(str, data[i])
@@ -789,6 +824,24 @@ func unescapeString(data string) string {
 		}
 	}
 	return string(str)
+}
+
+// // readRune reads a rune from preprocessed data.
+// func readRune(data []byte) (r rune, n int) {
+// 	if data[0] == '{' {
+// 		for i := 1; i < len(data); i++ {
+// 			if data[0] == '}' {
+
+// 			}
+// 		}
+// 	}
+// }
+
+func appendRune(dst []byte, r rune) []byte {
+	// provide enough space to encode the largest utf8 possible
+	dst = append(dst, 0, 0, 0, 0, 0, 0, 0, 0)
+	n := utf8.EncodeRune(dst[len(dst)-8:], r)
+	return dst[:len(dst)-8+n]
 }
 
 func fact(left Value, op byte, expr string, pos, steps int, opts *Options,
@@ -1356,20 +1409,29 @@ func squash(data string) (string, bool) {
 	return data, false
 }
 
-var space = [256]uint8{'\t': 1, '\n': 1, '\v': 1, '\f': 1, '\r': 1, ' ': 1}
+var chars = [256]uint8{
+	'\t': 1, '\n': 1, '\v': 1, '\f': 1, '\r': 1, ' ': 1, // space
+	'0': 2, '1': 2, '2': 2, '3': 2, '4': 2, '5': 2, '6': 2, '7': 2, // hex
+	'8': 2, '9': 2, 'a': 2, 'b': 2, 'c': 2, 'd': 2, 'e': 2, 'f': 2,
+	'A': 2, 'B': 2, 'C': 2, 'D': 2, 'E': 2, 'F': 2,
+}
 
 func isspace(c byte) bool {
-	return space[c] != 0
+	return chars[c] == 1
+}
+
+func ishex(c byte) bool {
+	return chars[c] == 2
 }
 
 // trim a simple ascii string along with doing position counting.
 // This is a tad bit faster than strings.TrimSpace.
 func trim(s string, pos int) (string, int) {
-	for len(s) > 0 && space[s[0]] == 1 {
+	for len(s) > 0 && isspace(s[0]) {
 		s = s[1:]
 		pos++
 	}
-	for len(s) > 0 && space[s[len(s)-1]] == 1 {
+	for len(s) > 0 && isspace(s[len(s)-1]) {
 		s = s[:len(s)-1]
 	}
 	return s, pos
