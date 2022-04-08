@@ -80,7 +80,7 @@ umap["timestamp"] = Custom(ts)
 // Set up an evaluation extender for referencing the user data and
 // using operators on custom types.
 ext := NewExtender(
-	func(expr string, udata any) (Value, error) {
+	func(expr string, ctx *Context) (Value, error) {
 		switch expr {
 		case "now":
 			// Get the seconds since Epoch.
@@ -97,14 +97,14 @@ ext := NewExtender(
 				return Int64(int64(d)), nil
 			}
 			// Not a time.Duration, check the umap for the data
-			umap, ok := udata.(map[string]Value)
+			umap, ok := ctx.UserData.(map[string]Value)
 			if !ok {
 				return Undefined, ErrUndefined
 			}
 			return umap[expr], nil
 		}
 	},
-	func(op Op, a, b Value, udata any) (Value, error) {
+	func(op Op, a, b Value, ctx *Context) (Value, error) {
 		// Try to convert a and/or b to time.Time
 		at, aok := a.Value().(time.Time)
 		bt, bok := b.Value().(time.Time)
@@ -145,29 +145,29 @@ ext := NewExtender(
 	},
 )
 
-// Set up the options
-opts := Options{UserData: umap, Extender: ext}
+// Set up a custom context that holds user data and the extender.
+ctx := Context{UserData: umap, Extender: ext}
 
 var res Value
 
 // Return the timestamp.
-res, _ = Eval(`timestamp`, &opts)
+res, _ = Eval(`timestamp`, &ctx)
 fmt.Println(res)
 
 // Subtract an hour from the timestamp.
-res, _ = Eval(`timestamp - $1h`, &opts)
+res, _ = Eval(`timestamp - $1h`, &ctx)
 fmt.Println(res)
 
 // Add one day to the current time.
-res, _ = Eval(`now + $24h`, &opts)
+res, _ = Eval(`now + $24h`, &ctx)
 fmt.Println(res)
 
 // See if timestamp is older than a day
-res, _ = Eval(`timestamp < now - $24h ? "old" : "new"`, &opts)
+res, _ = Eval(`timestamp < now - $24h ? "old" : "new"`, &ctx)
 fmt.Println(res)
 
 // Get the center of the bounding box as a concatenated string.
-res, _ = Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &opts)
+res, _ = Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &ctx)
 fmt.Println(res)
 
 // Output:

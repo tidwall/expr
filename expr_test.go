@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -276,15 +277,15 @@ var testTable = []string{
 
 func simpleExtendorOptions(
 	udata any,
-	eval func(expr string, udata any) (Value, error),
-	op func(op Op, a, b Value, udata any) (Value, error),
-) Options {
-	return Options{UserData: udata, Extender: NewExtender(eval, op)}
+	eval func(expr string, ctx *Context) (Value, error),
+	op func(op Op, a, b Value, ctx *Context) (Value, error),
+) Context {
+	return Context{UserData: udata, Extender: NewExtender(eval, op)}
 }
 
 func TestEval(t *testing.T) {
 	testOptions := simpleExtendorOptions(nil,
-		func(expr string, _ any) (Value, error) {
+		func(expr string, _ *Context) (Value, error) {
 			if strings.HasPrefix(expr, "i64(") && expr[len(expr)-1] == ')' {
 				x, err := strconv.ParseInt(expr[4:len(expr)-1], 10, 64)
 				if err != nil {
@@ -317,7 +318,7 @@ func TestEval(t *testing.T) {
 			}
 			return Undefined, ErrUndefined
 		},
-		func(op Op, a, b Value, udata interface{}) (Value, error) {
+		func(op Op, a, b Value, ctx *Context) (Value, error) {
 			if a.Number() == -90909090 || b.Number() == -90909090 {
 				// special condition
 				return Undefined, ErrUndefined
@@ -378,8 +379,8 @@ func TestEval(t *testing.T) {
 		}
 	}
 
-	eval := func(expr string, opts *Options) Value {
-		r, err := Eval(expr, opts)
+	eval := func(expr string, ctx *Context) Value {
+		r, err := Eval(expr, ctx)
 		if err != nil {
 			return String(err.Error())
 		}
@@ -523,10 +524,10 @@ func TestEval(t *testing.T) {
 		t.Fatal()
 	}
 	sops := simpleExtendorOptions(nil,
-		func(expr string, _ interface{}) (Value, error) {
+		func(expr string, ctx *Context) (Value, error) {
 			return Custom("hello"), nil
 		},
-		func(op Op, a, b Value, udata any) (Value, error) {
+		func(op Op, a, b Value, ctx *Context) (Value, error) {
 			return Undefined, ErrUndefined
 		},
 	)
@@ -536,10 +537,10 @@ func TestEval(t *testing.T) {
 	}
 
 	sops = simpleExtendorOptions(nil,
-		func(expr string, _ interface{}) (Value, error) {
+		func(expr string, ctx *Context) (Value, error) {
 			return Custom(thing(999)), nil
 		},
-		func(op Op, a, b Value, udata any) (Value, error) {
+		func(op Op, a, b Value, ctx *Context) (Value, error) {
 			return String(fmt.Sprintf("[%d:%d:%t:%s:%.0f][%d:%d:%t:%s:%.0f]",
 				a.Int64(), a.Uint64(), a.Bool(), a.String(), a.Float64(),
 				a.Int64(), a.Uint64(), a.Bool(), a.String(), a.Float64(),
@@ -555,7 +556,7 @@ func TestEval(t *testing.T) {
 		t.Fatal()
 	}
 	sops = simpleExtendorOptions(nil,
-		func(expr string, _ interface{}) (Value, error) {
+		func(expr string, ctx *Context) (Value, error) {
 			return Custom(thing(999)), nil
 		}, nil)
 	if eval("abc + 1", &sops).String() != "OperatorError: undefined" {
@@ -593,6 +594,84 @@ func testParseString(t *testing.T, data, expect string, expectOK bool) {
 		t.Fatalf("expected %t/'%s' got %t/'%s'", expectOK, expect, ok, got)
 	}
 }
+
+func TestEvalForEach(t *testing.T) {
+	var vals []int
+	res, err := EvalForEach(`1,2,3,4`, func(value Value) error {
+		vals = append(vals, int(value.Int64()))
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Int64() != 4 {
+		t.Fatal()
+	}
+	if !reflect.DeepEqual(vals, []int{1, 2, 3, 4}) {
+		t.Fatal()
+	}
+	vals = nil
+	res, err = EvalForEach(`1,2,3,4`, func(value Value) error {
+		vals = append(vals, int(value.Int64()))
+		if len(vals) == 3 {
+			return ErrStop
+		}
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Int64() != 3 {
+		t.Fatal()
+	}
+	if !reflect.DeepEqual(vals, []int{1, 2, 3}) {
+		t.Fatal()
+	}
+
+	vals = nil
+	res, err = EvalForEach(`1,2,3,4`, func(value Value) error {
+		vals = append(vals, int(value.Int64()))
+		if len(vals) == 4 {
+			return ErrStop
+		}
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Int64() != 4 {
+		t.Fatal()
+	}
+
+	if !reflect.DeepEqual(vals, []int{1, 2, 3, 4}) {
+		t.Fatal()
+	}
+
+	vals = nil
+	res, err = EvalForEach(`1,2,3,4`, func(value Value) error {
+		vals = append(vals, int(value.Int64()))
+		if len(vals) == 3 {
+			return errors.New("fail")
+		}
+		return nil
+	}, nil)
+	if err == nil {
+		t.Fatal()
+	}
+	vals = nil
+	res, err = EvalForEach(`1,2,3,4`, func(value Value) error {
+		vals = append(vals, int(value.Int64()))
+		if len(vals) == 4 {
+			return errors.New("fail")
+		}
+		return nil
+	}, nil)
+	if err == nil {
+		t.Fatal()
+	}
+
+}
+
 func TestParseString(t *testing.T) {
 	testParseString(t, ``, ``, false)
 	testParseString(t, `"`, ``, false)
@@ -615,7 +694,7 @@ func BenchmarkSimpleFact(b *testing.B) {
 
 func BenchmarkSimpleFactRef(b *testing.B) {
 	opts := simpleExtendorOptions(nil,
-		func(expr string, _ interface{}) (Value, error) {
+		func(expr string, ctx *Context) (Value, error) {
 			if expr == "ten" {
 				return Float64(10), nil
 			}
@@ -635,7 +714,7 @@ func BenchmarkSimpleComp(b *testing.B) {
 
 func BenchmarkSimpleCompRef(b *testing.B) {
 	opts := simpleExtendorOptions(nil,
-		func(expr string, _ interface{}) (Value, error) {
+		func(expr string, ctx *Context) (Value, error) {
 			if expr == "ten" {
 				return Float64(10), nil
 			}
@@ -664,7 +743,7 @@ func TestReadme(t *testing.T) {
 	// Set up an evaluation extender for referencing the user data and
 	// using operators on custom types.
 	ext := NewExtender(
-		func(expr string, udata any) (Value, error) {
+		func(expr string, ctx *Context) (Value, error) {
 			switch expr {
 			case "now":
 				// Get the seconds since Epoch.
@@ -681,14 +760,14 @@ func TestReadme(t *testing.T) {
 					return Int64(int64(d)), nil
 				}
 				// Not a time.Duration, check the umap for the data
-				umap, ok := udata.(map[string]Value)
+				umap, ok := ctx.UserData.(map[string]Value)
 				if !ok {
 					return Undefined, ErrUndefined
 				}
 				return umap[expr], nil
 			}
 		},
-		func(op Op, a, b Value, udata any) (Value, error) {
+		func(op Op, a, b Value, ctx *Context) (Value, error) {
 			// Try to convert a and/or b to time.Time
 			at, aok := a.Value().(time.Time)
 			bt, bok := b.Value().(time.Time)
@@ -730,7 +809,7 @@ func TestReadme(t *testing.T) {
 	)
 
 	// Set up the options
-	opts := Options{UserData: umap, Extender: ext}
+	opts := Context{UserData: umap, Extender: ext}
 
 	var res Value
 
