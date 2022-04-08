@@ -497,6 +497,8 @@ func (a Value) tobool() Value {
 		} else {
 			t = a.tofval().fval != 0
 		}
+	case undf, nval:
+		t = false
 	default:
 		t = a.tofval().fval != 0
 	}

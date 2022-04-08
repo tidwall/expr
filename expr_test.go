@@ -233,6 +233,10 @@ var testTable = []string{
 	(`undefined + undefined`), (`NaN`),
 	(`null + null`), (`0`),
 	(`null + undefined`), (`NaN`),
+	(`!undefined`), (`true`),
+	(`!!undefined`), (`false`),
+	(`!null`), (`true`),
+	(`!!null`), (`false`),
 }
 
 func simpleExtendorOptions(
