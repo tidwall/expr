@@ -625,7 +625,7 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 			return Undefined, errSyntax(pos)
 		}
 		return Float64(x), nil
-	case '"':
+	case '"', '\'', '`':
 		s, ok := parseString(expr)
 		if !ok {
 			return Undefined, errSyntax(pos)
@@ -679,6 +679,10 @@ func evalAtom(expr string, pos, steps int, opts *Options) (Value, error) {
 // Adapted from the GJSON project.
 func parseString(data string) (out string, ok bool) {
 	var esc bool
+	if len(data) < 2 {
+		return "", false
+	}
+	qch := data[0]
 	for i := 1; i < len(data); i++ {
 		if data[i] < ' ' {
 			break
@@ -690,9 +694,6 @@ func parseString(data string) (out string, ok bool) {
 				return "", false
 			}
 			switch data[i] {
-			default:
-				return "", false
-			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
 			case 'u':
 				for j := 0; j < 4; j++ {
 					i++
@@ -703,8 +704,18 @@ func parseString(data string) (out string, ok bool) {
 						return "", false
 					}
 				}
+			case 'x':
+				for j := 0; j < 2; j++ {
+					i++
+					if i >= len(data) ||
+						(!((data[i] >= '0' && data[i] <= '9') ||
+							(data[i] >= 'a' && data[i] <= 'f') ||
+							(data[i] >= 'A' && data[i] <= 'F'))) {
+						return "", false
+					}
+				}
 			}
-		} else if data[i] == '"' {
+		} else if data[i] == qch {
 			if i != len(data)-1 {
 				return "", false
 			}
@@ -720,7 +731,7 @@ func parseString(data string) (out string, ok bool) {
 
 // runeit returns the rune from the the \uXXXX
 func runeit(data string) rune {
-	n, _ := strconv.ParseUint(data[:4], 16, 64)
+	n, _ := strconv.ParseUint(data, 16, 64)
 	return rune(n)
 }
 
@@ -737,10 +748,6 @@ func unescapeString(data string) string {
 		case data[i] == '\\':
 			i++
 			switch data[i] {
-			case '\\':
-				str = append(str, '\\')
-			case '/':
-				str = append(str, '/')
 			case 'b':
 				str = append(str, '\b')
 			case 'f':
@@ -751,17 +758,15 @@ func unescapeString(data string) string {
 				str = append(str, '\r')
 			case 't':
 				str = append(str, '\t')
-			case '"':
-				str = append(str, '"')
 			case 'u':
-				r := runeit(data[i+1:])
+				r := runeit(data[i+1:][:4])
 				i += 5
 				if utf16.IsSurrogate(r) {
 					// need another code
 					if len(data[i:]) >= 6 && data[i] == '\\' &&
 						data[i+1] == 'u' {
 						// we expect it to be correct so just consume it
-						r = utf16.DecodeRune(r, runeit(data[i+2:]))
+						r = utf16.DecodeRune(r, runeit(data[i+2:][:4]))
 						i += 6
 					}
 				}
@@ -770,6 +775,16 @@ func unescapeString(data string) string {
 				n := utf8.EncodeRune(str[len(str)-8:], r)
 				str = str[:len(str)-8+n]
 				i-- // backtrack index by one
+			case 'x':
+				r := runeit(data[i+1:][:2])
+				i += 3
+				// provide enough space to encode the largest utf8 possible
+				str = append(str, 0, 0, 0, 0, 0, 0, 0, 0)
+				n := utf8.EncodeRune(str[len(str)-8:], r)
+				str = str[:len(str)-8+n]
+				i-- // backtrack index by one
+			default:
+				str = append(str, data[i])
 			}
 		}
 	}
@@ -798,29 +813,21 @@ func fact(left Value, op byte, expr string, pos, steps int, opts *Options,
 	}
 }
 
-var factChars = [256]byte{
-	'*': 1, '/': 1, '%': 1,
-	'(': 2, '[': 2, '{': 2, '"': 2,
-}
-
 func evalFacts(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
 	var op byte
 	for i := 0; i < len(expr); i++ {
-		is := factChars[expr[i]]
-		if is == 0 {
-			continue
-		}
-		if is == 1 { // '*' '/' '%'
+		switch expr[i] {
+		case '*', '/', '%':
 			left, err = fact(left, op, expr[s:i], pos+s, steps, opts)
 			if err != nil {
 				return Undefined, err
 			}
 			op = expr[i]
 			s = i + 1
-		} else { // '(', '[', '{', '"'
+		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
@@ -894,7 +901,7 @@ func evalSums(expr string, pos, steps int, opts *Options) (Value, error) {
 			s = i + 1
 			fill = false
 			neg = false
-		case '(', '[', '{', '"':
+		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
@@ -956,22 +963,14 @@ func comp(left Value, op byte, expr string, pos, steps int, opts *Options,
 	}
 }
 
-var compChars = [256]byte{
-	'<': 1, '>': 1, '=': 1, '!': 1,
-	'(': 2, '[': 2, '{': 2, '"': 2,
-}
-
 func evalComps(expr string, pos, steps int, opts *Options) (Value, error) {
 	var err error
 	var s int
 	var left Value
 	var op byte
 	for i := 0; i < len(expr); i++ {
-		is := compChars[expr[i]]
-		if is == 0 {
-			continue
-		}
-		if is == 1 { // '<', '>', '=', '!'
+		switch expr[i] {
+		case '<', '>', '=', '!':
 			opch := expr[i]
 			opsz := 1
 			switch opch {
@@ -998,7 +997,7 @@ func evalComps(expr string, pos, steps int, opts *Options) (Value, error) {
 			op = opch
 			i = i + opsz - 1
 			s = i + 1
-		} else { // '(', '[', '{', '"'
+		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
@@ -1045,7 +1044,7 @@ func evalLogicalAnd(expr string, pos, steps int, opts *Options) (Value, error) {
 			op = expr[i]
 			i++
 			s = i + 1
-		case '(', '[', '{', '"':
+		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
@@ -1094,7 +1093,7 @@ func evalLogicalOr(expr string, pos, steps int, opts *Options) (Value, error) {
 			op = expr[i]
 			i++
 			s = i + 1
-		case '(', '[', '{', '"':
+		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
@@ -1136,7 +1135,7 @@ func evalTerns(expr string, pos, steps int, opts *Options) (Value, error) {
 				}
 				return evalExpr(right, pos+i+1, steps, opts)
 			}
-		case '(', '[', '{', '"':
+		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
 			if err != nil {
 				return Undefined, err
@@ -1300,52 +1299,57 @@ func readGroup(data string, pos int) (string, error) {
 }
 
 func squash(data string) (string, bool) {
-	// expects that the lead character is a '[' or '{' or '(' or '"'
+	// expects that the lead character is
+	//   '[' or '{' or '(' or '"' or '\'' or '`'
 	// squash the value, ignoring all nested arrays and objects.
 	var i, depth int
-	if data[0] != '"' {
+	switch data[0] {
+	case '"', '\'', '`':
+	default:
 		i, depth = 1, 1
 	}
 	for ; i < len(data); i++ {
-		if data[i] >= '"' && data[i] <= '}' {
-			switch data[i] {
-			case '"':
-				i++
-				s2 := i
-				for ; i < len(data); i++ {
-					if data[i] > '\\' {
-						continue
-					}
-					if data[i] == '"' {
-						// look for an escaped slash
-						if data[i-1] == '\\' {
-							n := 0
-							for j := i - 2; j > s2-1; j-- {
-								if data[j] != '\\' {
-									break
-								}
-								n++
+		if data[i] < '"' || data[i] > '}' {
+			continue
+		}
+		switch data[i] {
+		case '"', '\'', '`':
+			qch := data[i]
+			i++
+			s2 := i
+			for ; i < len(data); i++ {
+				if data[i] > '\\' {
+					continue
+				}
+				if data[i] == qch {
+					// look for an escaped slash
+					if data[i-1] == '\\' {
+						n := 0
+						for j := i - 2; j > s2-1; j-- {
+							if data[j] != '\\' {
+								break
 							}
-							if n%2 == 0 {
-								continue
-							}
+							n++
 						}
-						break
+						if n%2 == 0 {
+							continue
+						}
 					}
+					break
 				}
-				if depth == 0 {
-					if i >= len(data) {
-						return data, false
-					}
-					return data[:i+1], true
+			}
+			if depth == 0 {
+				if i >= len(data) {
+					return data, false
 				}
-			case '{', '[', '(':
-				depth++
-			case '}', ']', ')':
-				depth--
-				if depth == 0 {
-					return data[:i+1], true
-				}
+				return data[:i+1], true
+			}
+		case '{', '[', '(':
+			depth++
+		case '}', ']', ')':
+			depth--
+			if depth == 0 {
+				return data[:i+1], true
 			}
 		}
 	}

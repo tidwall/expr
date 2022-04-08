@@ -82,8 +82,9 @@ var testTable = []string{
 	(` == 1`), ("SyntaxError"),
 	(`"Example emoji, KO: \ud83d\udd13, \ud83c\udfc3 OK: \u2764\ufe0f "`), //>
 	(`Example emoji, KO: 🔓, 🏃 OK: ❤️ `),
+	(`"KO: \xffsd"`), (`KO: ÿsd`),
 	(`"KO: \ud8"`), (`SyntaxError`),
-	(`"KO: \zd8"`), (`SyntaxError`),
+	(`"KO: \zd8"`), (`KO: zd8`),
 	(`"KO: ` + string(byte(0)) + `"`), (`SyntaxError`),
 	(`false == true`), (`false`),
 	(`false + true`), (`1`),
@@ -249,6 +250,10 @@ var testTable = []string{
 	(`(true??1)+1`), (`2`),
 	(`(undefined_noerr??undefined_noerr)+1`), (`NaN`),
 	(`(cust(1)??cust(2))+1`), (`2`),
+	("`hello world`"), ("hello world"),
+	("`hello \"\" world`"), (`hello "" world`),
+	("'hello \\'\"\"\\a\\xFF\\p world'"), (`hello '""aÿp world`),
+	("'\\xFG'"), (`SyntaxError`),
 }
 
 func simpleExtendorOptions(
@@ -563,19 +568,25 @@ func FuzzExpr(f *testing.F) {
 	})
 }
 
+func testParseString(t *testing.T, data, expect string, expectOK bool) {
+	t.Helper()
+	got, ok := parseString(data)
+	if ok != expectOK || got != expect {
+		t.Fatalf("expected %t/'%s' got %t/'%s'", expectOK, expect, ok, got)
+	}
+}
 func TestParseString(t *testing.T) {
-	if _, ok := parseString(``); ok {
-		t.Fatal()
-	}
-	if _, ok := parseString(`"`); ok {
-		t.Fatal()
-	}
-	if _, ok := parseString(`"\`); ok {
-		t.Fatal()
-	}
-	if _, ok := parseString(`"1"1`); ok {
-		t.Fatal()
-	}
+	testParseString(t, ``, ``, false)
+	testParseString(t, `"`, ``, false)
+	testParseString(t, `"\`, ``, false)
+	testParseString(t, `"1"1`, ``, false)
+	testParseString(t, "``", ``, true)
+	testParseString(t, "`1`", `1`, true)
+	testParseString(t, "`2`", `2`, true)
+	testParseString(t, "`2\"`", `2"`, true)
+	testParseString(t, "'2'", `2`, true)
+	testParseString(t, "'2\\1'", `21`, true)
+	testParseString(t, `'hh"ii'`, `hh"ii`, true)
 }
 
 func BenchmarkSimpleFact(b *testing.B) {
