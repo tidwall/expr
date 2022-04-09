@@ -273,6 +273,14 @@ var testTable = []string{
 	(`1(,2,3,4`), ("SyntaxError"),
 	(`1,2,3,(4+)`), ("SyntaxError"),
 	(`6<7 , 2>5 , 5`), ("5"),
+	(`hello ?. world`), ("ReferenceError: hello ?. world is not defined"),
+	(`this?.that("1","2")`), (`ReferenceError: this?.that("1","2") is not defined`),
+	(`  != 100`), ("SyntaxError"),
+	(`  >= 100`), ("SyntaxError"),
+	(` (1) != ("\'1`), ("SyntaxError"),
+	(`1 != 2 > 1 != 1`), ("true"),
+	(`1 != 2 < 1 != 1`), ("false"),
+	(`1 != 1 < 2 != 1`), ("true"),
 }
 
 func simpleExtendorOptions(

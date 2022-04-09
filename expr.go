@@ -972,31 +972,14 @@ func evalSums(expr string, pos, steps int, ctx *Context) (Value, error) {
 
 func comp(left Value, op byte, expr string, pos, steps int, ctx *Context,
 ) (Value, error) {
-	var neg bool
-	var boolit bool
 	expr, pos = trim(expr, pos)
-	for {
-		if len(expr) == 0 {
-			return Undefined, errSyntax(pos)
-		}
-		if expr[0] != '!' {
-			break
-		}
-		neg = !neg
-		boolit = true
-		expr = expr[1:]
-		expr, pos = trim(expr, pos+1)
+	if len(expr) == 0 {
+		return Undefined, errSyntax(pos)
 	}
-	// parse sums of expression
+	// parse next expression
 	right, err := evalAuto(stepComps<<1, expr, pos, steps, nil, ctx)
 	if err != nil {
 		return Undefined, err
-	}
-	if boolit {
-		right = right.tobool()
-		if neg {
-			right.bval = !right.bval
-		}
 	}
 	switch op {
 	case '<':
@@ -1007,10 +990,6 @@ func comp(left Value, op byte, expr string, pos, steps int, ctx *Context,
 		return left.gt(right, pos, ctx)
 	case '>' + 32:
 		return left.gte(right, pos, ctx)
-	case '=':
-		return left.eq(right, pos, ctx)
-	case '!':
-		return left.neq(right, pos, ctx)
 	default:
 		return right, nil
 	}
@@ -1023,24 +1002,11 @@ func evalComps(expr string, pos, steps int, ctx *Context) (Value, error) {
 	var op byte
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
-		case '<', '>', '=', '!':
+		case '<', '>':
 			opch := expr[i]
 			opsz := 1
-			switch opch {
-			case '<', '>':
-				if i < len(expr)-1 && expr[i+1] == '=' {
-					opch += 32 // '<' becomes '\' and '>' becomes '^'
-					opsz++
-				}
-			case '=':
-				if i == len(expr)-1 || expr[i+1] != '=' {
-					return Undefined, errSyntax(pos + i)
-				}
-				opsz++
-			case '!':
-				if i == len(expr)-1 || expr[i+1] != '=' {
-					continue
-				}
+			if i < len(expr)-1 && expr[i+1] == '=' {
+				opch += 32
 				opsz++
 			}
 			left, err = comp(left, op, expr[s:i], pos+s, steps, ctx)
@@ -1059,6 +1025,87 @@ func evalComps(expr string, pos, steps int, ctx *Context) (Value, error) {
 		}
 	}
 	return comp(left, op, expr[s:], pos+s, steps, ctx)
+}
+
+func equal(left Value, op byte, expr string, pos, steps int, ctx *Context,
+) (Value, error) {
+	var neg bool
+	var boolit bool
+	expr, pos = trim(expr, pos)
+	for {
+		if len(expr) == 0 {
+			return Undefined, errSyntax(pos)
+		}
+		if expr[0] != '!' {
+			break
+		}
+		neg = !neg
+		boolit = true
+		expr = expr[1:]
+		expr, pos = trim(expr, pos+1)
+	}
+	// parse next expression
+	right, err := evalAuto(stepEquality<<1, expr, pos, steps, nil, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	if boolit {
+		right = right.tobool()
+		if neg {
+			right.bval = !right.bval
+		}
+	}
+	switch op {
+	case '=':
+		return left.eq(right, pos, ctx)
+	case '!':
+		return left.neq(right, pos, ctx)
+	default:
+		return right, nil
+	}
+}
+
+func evalEquality(expr string, pos, steps int, ctx *Context) (Value, error) {
+	var err error
+	var s int
+	var left Value
+	var op byte
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '=', '!':
+			opch := expr[i]
+			opsz := 1
+			switch opch {
+			case '=':
+				if i > 0 && (expr[i-1] == '>' || expr[i-1] == '<') {
+					continue
+				}
+				if i == len(expr)-1 || expr[i+1] != '=' {
+					return Undefined, errSyntax(pos + i)
+				}
+				opsz++
+			case '!':
+				if i == len(expr)-1 || expr[i+1] != '=' {
+					continue
+				}
+				opsz++
+			}
+			left, err = equal(left, op, expr[s:i], pos+s, steps, ctx)
+			if err != nil {
+				return Undefined, err
+			}
+			op = opch
+			i = i + opsz - 1
+			s = i + 1
+		case '(', '[', '{', '"', '\'', '`':
+			g, err := readGroup(expr[i:], pos+i)
+			if err != nil {
+				return Undefined, err
+			}
+			i = i + len(g) - 1
+		}
+	}
+	return equal(left, op, expr[s:], pos+s, steps, ctx)
 }
 
 func logicalAnd(left Value, op byte, expr string, pos, steps int, ctx *Context,
@@ -1135,7 +1182,14 @@ func evalLogicalOr(expr string, pos, steps int, ctx *Context) (Value, error) {
 	var op byte
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
-		case '|', '?':
+		case '?':
+			if i+1 < len(expr) && expr[i+1] == '.' {
+				// '?.' operator
+				i++
+				continue
+			}
+			fallthrough
+		case '|':
 			if i == len(expr)-1 || expr[i+1] != expr[i] {
 				return Undefined, errSyntax(pos + i)
 			}
@@ -1164,8 +1218,8 @@ func evalTerns(expr string, pos, steps int, ctx *Context) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '?':
-			if i+1 < len(expr) && expr[i+1] == '?' {
-				// '??' operator
+			if i+1 < len(expr) && (expr[i+1] == '?' || expr[i+1] == '.') {
+				// '??' or '?.' operator
 				i++
 				continue
 			}
@@ -1270,6 +1324,11 @@ func evalAuto(step int, expr string, pos, steps int,
 			return evalLogicalAnd(expr, pos, steps, ctx)
 		}
 		fallthrough
+	case stepEquality:
+		if (steps & stepEquality) == stepEquality {
+			return evalEquality(expr, pos, steps, ctx)
+		}
+		fallthrough
 	case stepComps:
 		if (steps & stepComps) == stepComps {
 			return evalComps(expr, pos, steps, ctx)
@@ -1342,37 +1401,35 @@ func (e *simpleExtender) Op(op Op, a, b Value, ctx *Context) (Value, error) {
 	return e.op(op, a, b, ctx)
 }
 
+// Operator Precedence
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Operator_Precedence
 const (
-	_ = 1 << iota
-	stepComma
-	stepTerns
-	stepLogicalOr
-	stepLogicalAnd
-	stepComps
-	stepSums
-	stepFacts
+	_              = 1 << iota //
+	stepComma                  //  1: Comma / Sequence
+	stepTerns                  //  3: Conditional (ternary) operator
+	stepLogicalOr              //  4: Logical OR (||) Nullish coalescing operator (??)
+	stepLogicalAnd             //  5: Logical AND (&&)
+	stepEquality               //  9: Equality (==) (!=)
+	stepComps                  // 10: Comparison (<) (<=) (>) (>=)
+	stepSums                   // 12: Summation (-) (+)
+	stepFacts                  // 13: Factors (*) (/)
 )
 
-var opSteps = [256]byte{
-	',': stepComma,
-
-	'?': stepTerns | stepLogicalOr, // for ?: and ??
-	':': stepTerns,
-
-	'|': stepLogicalOr,
-	'&': stepLogicalAnd,
-
-	'+': stepSums,
-	'-': stepSums,
-
-	'<': stepComps,
-	'>': stepComps,
-	'=': stepComps,
-	'!': stepComps,
-
-	'*': stepFacts,
-	'/': stepFacts,
-	'%': stepFacts,
+var opSteps = [256]uint16{
+	',': stepComma,                 // ','
+	'?': stepTerns | stepLogicalOr, // '?:' '??'
+	':': stepTerns,                 // '?:'
+	'|': stepLogicalOr,             // '||'
+	'&': stepLogicalAnd,            // '&&'
+	'=': stepComps | stepEquality,  // '==' '<=' '>='
+	'!': stepEquality,              // '!' '!='
+	'<': stepComps,                 // '<' '<='
+	'>': stepComps,                 // '>' '>='
+	'+': stepSums,                  // '+'
+	'-': stepSums,                  // '-'
+	'*': stepFacts,                 // '*'
+	'/': stepFacts,                 // '/'
+	'%': stepFacts,                 // '%'
 }
 
 // Eval evaluates an expression and returns the Result.
@@ -1398,6 +1455,10 @@ func EvalForEach(expr string, iter func(value Value) error, ctx *Context,
 	var steps int
 	for i := 0; i < len(expr); i++ {
 		steps |= int(opSteps[expr[i]])
+	}
+	if iter != nil {
+		// require the comma step when using an iterator.
+		steps |= stepComma
 	}
 	r, err := evalExpr(expr, pos, steps, iter, ctx)
 	if err != nil {
