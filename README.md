@@ -75,7 +75,7 @@ umap["maxY"] = Number(34.3367)
 
 // Add a timestamp value to the user data map.
 ts, _ := time.Parse(time.RFC3339, "2022-03-31T09:00:00Z")
-umap["timestamp"] = Custom(ts)
+umap["timestamp"] = Object(ts)
 
 // Set up an evaluation extender for referencing the user data and
 // using operators on custom types.
@@ -84,7 +84,7 @@ ext := NewExtender(
 		switch expr {
 		case "now":
 			// Get the seconds since Epoch.
-			return Custom(time.Now()), nil
+			return Object(time.Now()), nil
 		default:
 			if len(expr) >= 1 && expr[0] == '$' {
 				// Try parsing a time.Duration.
@@ -136,9 +136,9 @@ ext := NewExtender(
 			}
 			switch op {
 			case OpAdd:
-				return Custom(x.Add(time.Duration(y))), nil
+				return Object(x.Add(time.Duration(y))), nil
 			case OpSub:
-				return Custom(x.Add(-time.Duration(y))), nil
+				return Object(x.Add(-time.Duration(y))), nil
 			}
 		}
 		return Undefined, ErrUndefined

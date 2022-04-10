@@ -10,12 +10,18 @@ import (
 	"math"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
 
 var testTable = []string{
+	// (`"hello1"  .  world . hello . fellow`), (`asdf`),
+	// (`"hello"`), (`hello`),
+	// (`i64(-9223372036854775808)`), (`-9223372036854775808`),
+	(`.1`), (`0.1`),
+	(`.1e-1`), (`0.01`),
+	(`.1e-1 + 5`), (`5.01`),
+	(`0.1`), (`0.1`),
 	(``), (`undefined`),
 	(` `), (`undefined`),
 	(`()`), (`SyntaxError`),
@@ -98,18 +104,18 @@ var testTable = []string{
 	(`NaN + 1`), (`NaN`),
 	(`NaN * 1`), (`NaN`),
 	(`0.24ab31 - 1`), (`SyntaxError`),
-	(`0 + {1}`), (`ReferenceError: {1} is not defined`),
-	(`0 + [1]`), (`ReferenceError: [1] is not defined`),
+	(`0 + {1}`), (`SyntaxError`),
+	(`0 + [1]`), (`SyntaxError`),
 	(`hello + 2`), (`ReferenceError: hello is not defined`),
-	(`i64(-9223372036854775808)`), (`-9223372036854775808`),
-	(`i64(9223372036854775807)`), (`9223372036854775807`),
-	(`i64(-9223372036854775808)`), (`-9223372036854775808`),
-	(`u64(18446744073709551615) - u64(18446744073709551614)`), (`1`),
-	(`u64(18446744073709551614) + u64(1)`), (`18446744073709551615`),
-	(`i64(-9223372036854775808) + i64(1)`), (`-9223372036854775807`),
-	(`i64(9223372036854775807) - i64(1)`), (`9223372036854775806`),
-	(`i64(9223372036854775807) - 1`), (`9223372036854776000`),
-	(`u64(9223372036854775807) - 1`), (`9223372036854776000`),
+	(`i64("-9223372036854775808")`), (`-9223372036854775808`),
+	(`i64("9223372036854775807")`), (`9223372036854775807`),
+	(`i64("-9223372036854775808")`), (`-9223372036854775808`),
+	(`u64("18446744073709551615") - u64("18446744073709551614")`), (`1`),
+	(`u64("18446744073709551614") + u64("1")`), (`18446744073709551615`),
+	(`i64("-9223372036854775808") + i64("1")`), (`-9223372036854775807`),
+	(`i64("9223372036854775807") - i64("1")`), (`9223372036854775806`),
+	(`i64("9223372036854775807") - 1`), (`9223372036854776000`),
+	(`u64("9223372036854775807") - 1`), (`9223372036854776000`),
 	(`u64(1) > 0`), (`true`),
 	(`u64(1) >= 0`), (`true`),
 	(`u64(0) >= 0`), (`true`),
@@ -175,7 +181,7 @@ var testTable = []string{
 	(`100 + blank_err`), (`ReferenceError: blank_err is not defined`),
 	(`100 + custom_err`), (`ReferenceError: hiya`),
 	(`"a \u\"567"`), (`SyntaxError`),
-	(`(hello) + (jello`), (`ReferenceError: hello is not defined`),
+	// (`(hello) + (jello`), (`ReferenceError: hello is not defined`),
 	(`(1) + (jello`), (`SyntaxError`),
 	(`(1) && `), (`SyntaxError`),
 	(` && (1)`), (`SyntaxError`),
@@ -273,8 +279,8 @@ var testTable = []string{
 	(`1(,2,3,4`), ("SyntaxError"),
 	(`1,2,3,(4+)`), ("SyntaxError"),
 	(`6<7 , 2>5 , 5`), ("5"),
-	(`hello ?. world`), ("ReferenceError: hello ?. world is not defined"),
-	(`this?.that("1","2")`), (`ReferenceError: this?.that("1","2") is not defined`),
+	(`hello ?. world`), ("ReferenceError: hello is not defined"),
+	(`this?.that("1","2")`), (`ReferenceError: this is not defined`),
 	(`  != 100`), ("SyntaxError"),
 	(`  >= 100`), ("SyntaxError"),
 	(` (1) != ("\'1`), ("SyntaxError"),
@@ -285,48 +291,90 @@ var testTable = []string{
 
 func simpleExtendorOptions(
 	udata any,
-	eval func(expr string, ctx *Context) (Value, error),
-	op func(op Op, a, b Value, ctx *Context) (Value, error),
+	ref func(info RefInfo, ctx *Context) (Value, error),
+	call func(info CallInfo, ctx *Context) (Value, error),
+	op func(info OpInfo, ctx *Context) (Value, error),
 ) Context {
-	return Context{UserData: udata, Extender: NewExtender(eval, op)}
+	return Context{UserData: udata, Extender: NewExtender(ref, call, op)}
 }
 
-func TestEval(t *testing.T) {
+type fnValue struct {
+	name string
+}
+
+func TestEvalTable(t *testing.T) {
 	testOptions := simpleExtendorOptions(nil,
-		func(expr string, _ *Context) (Value, error) {
-			if strings.HasPrefix(expr, "i64(") && expr[len(expr)-1] == ')' {
-				x, err := strconv.ParseInt(expr[4:len(expr)-1], 10, 64)
-				if err != nil {
-					return Undefined, err
+		func(info RefInfo, _ *Context) (Value, error) {
+			if !info.Chain {
+				switch info.Ident {
+				case "i64", "u64", "cust":
+					return Function(info.Ident), nil
+				case "undefined_noerr":
+					return Undefined, nil
+				case "blank_err":
+					return Undefined, ErrUndefined
+				case "custom_err":
+					return Undefined, errors.New("hiya")
 				}
+			}
+			return Undefined, ErrUndefined
+			// if strings.HasPrefix(ident, "i64(") && ident[len(ident)-1] == ')' {
+			// 	x, err := strconv.ParseInt(ident[4:len(ident)-1], 10, 64)
+			// 	if err != nil {
+			// 		return Undefined, err
+			// 	}
+			// 	return Int64(x), nil
+			// }
+			// if strings.HasPrefix(ident, "u64(") && ident[len(ident)-1] == ')' {
+			// 	x, err := strconv.ParseUint(ident[4:len(ident)-1], 10, 64)
+			// 	if err != nil {
+			// 		return Undefined, err
+			// 	}
+			// 	return Uint64(x), nil
+			// }
+			// if ident == "undefined_noerr" {
+			// 	return Undefined, nil
+			// }
+			// if ident == "blank_err" {
+			// 	return Undefined, ErrUndefined
+			// }
+			// if ident == "custom_err" {
+			// 	return Undefined, errors.New("hiya")
+			// }
+			// if strings.HasPrefix(ident, "cust(") && ident[len(ident)-1] == ')' {
+			// 	x, err := strconv.ParseInt(ident[5:len(ident)-1], 10, 64)
+			// 	if err != nil {
+			// 		return Undefined, err
+			// 	}
+			// 	return Object(x), nil
+			// }
+			// return Undefined, ErrUndefined
+		},
+		func(info CallInfo, ctx *Context) (Value, error) {
+			args, err := info.Args.Compute()
+			if err != nil {
+				return Undefined, err
+			}
+			switch info.Name {
+			case "i64":
+				x, _ := strconv.ParseInt(args.Get(0).String(), 10, 64)
 				return Int64(x), nil
-			}
-			if strings.HasPrefix(expr, "u64(") && expr[len(expr)-1] == ')' {
-				x, err := strconv.ParseUint(expr[4:len(expr)-1], 10, 64)
-				if err != nil {
-					return Undefined, err
-				}
+			case "u64":
+				x, _ := strconv.ParseUint(args.Get(0).String(), 10, 64)
 				return Uint64(x), nil
-			}
-			if expr == "undefined_noerr" {
-				return Undefined, nil
-			}
-			if expr == "blank_err" {
-				return Undefined, ErrUndefined
-			}
-			if expr == "custom_err" {
-				return Undefined, errors.New("hiya")
-			}
-			if strings.HasPrefix(expr, "cust(") && expr[len(expr)-1] == ')' {
-				x, err := strconv.ParseInt(expr[5:len(expr)-1], 10, 64)
+			case "cust":
+				x, err := strconv.ParseInt(args.Get(0).String(), 10, 64)
 				if err != nil {
 					return Undefined, err
 				}
-				return Custom(x), nil
+				return Object(x), nil
 			}
 			return Undefined, ErrUndefined
 		},
-		func(op Op, a, b Value, ctx *Context) (Value, error) {
+		func(info OpInfo, ctx *Context) (Value, error) {
+			a := info.Left
+			b := info.Right
+			op := info.Op
 			if a.Number() == -90909090 || b.Number() == -90909090 {
 				// special condition
 				return Undefined, ErrUndefined
@@ -386,7 +434,6 @@ func TestEval(t *testing.T) {
 				i/2, expr, expect, val)
 		}
 	}
-
 	eval := func(expr string, ctx *Context) Value {
 		r, err := Eval(expr, ctx)
 		if err != nil {
@@ -434,7 +481,7 @@ func TestEval(t *testing.T) {
 	if eval("u64(123)", &testOptions).Int64() != 123 {
 		t.Fatal()
 	}
-	if eval("u64(1)", nil).String() != "ReferenceError: u64(1) is not defined" {
+	if eval("u64(1)", nil).String() != "ReferenceError: u64 is not defined" {
 		t.Fatal()
 	}
 	if eval("true && false", &testOptions).Value() == true {
@@ -464,13 +511,13 @@ func TestEval(t *testing.T) {
 	if eval("u64(123)", &testOptions).Value() != uint64(123) {
 		t.Fatal()
 	}
-	if Custom(1).Value() != 1 {
+	if Object(1).Value() != 1 {
 		t.Fatal()
 	}
-	if !Custom(1).IsCustom() {
+	if !Object(1).IsObject() {
 		t.Fatal()
 	}
-	if Bool(true).IsCustom() {
+	if Bool(true).IsObject() {
 		t.Fatal()
 	}
 	if (Value{}).Value() != nil {
@@ -532,23 +579,26 @@ func TestEval(t *testing.T) {
 		t.Fatal()
 	}
 	sops := simpleExtendorOptions(nil,
-		func(expr string, ctx *Context) (Value, error) {
-			return Custom("hello"), nil
+		func(info RefInfo, ctx *Context) (Value, error) {
+			return Object("hello"), nil
 		},
-		func(op Op, a, b Value, ctx *Context) (Value, error) {
+		nil,
+		func(info OpInfo, ctx *Context) (Value, error) {
 			return Undefined, ErrUndefined
 		},
 	)
 	_, err = Eval("u64(1) + 1", &sops)
-	if err == nil || err.Error() != "OperatorError: undefined" {
+	if err == nil || err.Error() != "Uncaught TypeError: u64 is not a function" {
 		t.Fatal()
 	}
 
 	sops = simpleExtendorOptions(nil,
-		func(expr string, ctx *Context) (Value, error) {
-			return Custom(thing(999)), nil
+		func(info RefInfo, ctx *Context) (Value, error) {
+			return Object(thing(999)), nil
 		},
-		func(op Op, a, b Value, ctx *Context) (Value, error) {
+		nil,
+		func(info OpInfo, ctx *Context) (Value, error) {
+			a := info.Left
 			return String(fmt.Sprintf("[%d:%d:%t:%s:%.0f][%d:%d:%t:%s:%.0f]",
 				a.Int64(), a.Uint64(), a.Bool(), a.String(), a.Float64(),
 				a.Int64(), a.Uint64(), a.Bool(), a.String(), a.Float64(),
@@ -559,14 +609,14 @@ func TestEval(t *testing.T) {
 	if v.String() != "[999:999:true:999:999][999:999:true:999:999]" {
 		t.Fatal()
 	}
-	sops = simpleExtendorOptions(nil, nil, nil)
+	sops = simpleExtendorOptions(nil, nil, nil, nil)
 	if eval("abc + 1", &sops).String() != "ReferenceError: abc is not defined" {
 		t.Fatal()
 	}
 	sops = simpleExtendorOptions(nil,
-		func(expr string, ctx *Context) (Value, error) {
-			return Custom(thing(999)), nil
-		}, nil)
+		func(info RefInfo, ctx *Context) (Value, error) {
+			return Object(thing(999)), nil
+		}, nil, nil)
 	if eval("abc + 1", &sops).String() != "OperatorError: undefined" {
 		t.Fatal()
 	}
@@ -597,7 +647,11 @@ func FuzzExpr(f *testing.F) {
 
 func testParseString(t *testing.T, data, expect string, expectOK bool) {
 	t.Helper()
-	got, ok := parseString(data)
+	got, raw, ok := parseString(data)
+	if ok && len(raw) != len(data) {
+		got = ""
+		ok = false
+	}
 	if ok != expectOK || got != expect {
 		t.Fatalf("expected %t/'%s' got %t/'%s'", expectOK, expect, ok, got)
 	}
@@ -702,12 +756,12 @@ func BenchmarkSimpleFact(b *testing.B) {
 
 func BenchmarkSimpleFactRef(b *testing.B) {
 	opts := simpleExtendorOptions(nil,
-		func(expr string, ctx *Context) (Value, error) {
-			if expr == "ten" {
+		func(info RefInfo, ctx *Context) (Value, error) {
+			if info.Ident == "ten" {
 				return Float64(10), nil
 			}
 			return Undefined, nil
-		}, nil,
+		}, nil, nil,
 	)
 	for i := 0; i < b.N; i++ {
 		Eval("5 * ten", &opts)
@@ -722,12 +776,12 @@ func BenchmarkSimpleComp(b *testing.B) {
 
 func BenchmarkSimpleCompRef(b *testing.B) {
 	opts := simpleExtendorOptions(nil,
-		func(expr string, ctx *Context) (Value, error) {
-			if expr == "ten" {
+		func(info RefInfo, ctx *Context) (Value, error) {
+			if info.Ident == "ten" {
 				return Float64(10), nil
 			}
 			return Undefined, nil
-		}, nil,
+		}, nil, nil,
 	)
 	for i := 0; i < b.N; i++ {
 		Eval("5 < ten", &opts)
@@ -746,20 +800,20 @@ func TestReadme(t *testing.T) {
 
 	// Add a timestamp value to the user data map.
 	ts, _ := time.Parse(time.RFC3339, "2022-03-31T09:00:00Z")
-	umap["timestamp"] = Custom(ts)
+	umap["timestamp"] = Object(ts)
 
 	// Set up an evaluation extender for referencing the user data and
 	// using operators on custom types.
 	ext := NewExtender(
-		func(expr string, ctx *Context) (Value, error) {
-			switch expr {
+		func(info RefInfo, ctx *Context) (Value, error) {
+			switch info.Ident {
 			case "now":
 				// Get the seconds since Epoch.
-				return Custom(time.Now()), nil
+				return Object(time.Now()), nil
 			default:
-				if len(expr) >= 1 && expr[0] == '$' {
+				if len(info.Ident) >= 1 && info.Ident[0] == '$' {
 					// Try parsing a time.Duration.
-					s := expr[1:]
+					s := info.Ident[1:]
 					d, err := time.ParseDuration(s)
 					if err != nil {
 						return Undefined, err
@@ -772,17 +826,18 @@ func TestReadme(t *testing.T) {
 				if !ok {
 					return Undefined, ErrUndefined
 				}
-				return umap[expr], nil
+				return umap[info.Ident], nil
 			}
 		},
-		func(op Op, a, b Value, ctx *Context) (Value, error) {
+		nil,
+		func(info OpInfo, ctx *Context) (Value, error) {
 			// Try to convert a and/or b to time.Time
-			at, aok := a.Value().(time.Time)
-			bt, bok := b.Value().(time.Time)
+			at, aok := info.Left.Value().(time.Time)
+			bt, bok := info.Right.Value().(time.Time)
 			if aok && bok {
 				// Both values are time.Time.
 				// Perform comparison operation.
-				switch op {
+				switch info.Op {
 				case OpLt:
 					return Bool(at.Before(bt)), nil
 				case OpLte:
@@ -800,16 +855,16 @@ func TestReadme(t *testing.T) {
 				var y int64
 				if aok {
 					x = at
-					y = b.Int64()
+					y = info.Right.Int64()
 				} else {
 					x = bt
-					y = a.Int64()
+					y = info.Left.Int64()
 				}
-				switch op {
+				switch info.Op {
 				case OpAdd:
-					return Custom(x.Add(time.Duration(y))), nil
+					return Object(x.Add(time.Duration(y))), nil
 				case OpSub:
-					return Custom(x.Add(-time.Duration(y))), nil
+					return Object(x.Add(-time.Duration(y))), nil
 				}
 			}
 			return Undefined, ErrUndefined

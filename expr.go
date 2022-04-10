@@ -20,6 +20,7 @@ func errSyntax(pos int) error {
 func errUndefined(expr string, pos int) error {
 	return &errEval{
 		pos: pos, err: fmt.Errorf("ReferenceError: %s is not defined", expr),
+		udef: true,
 	}
 }
 
@@ -45,8 +46,9 @@ type booler interface{ Bool() bool }
 type stringer interface{ String() string }
 
 type errEval struct {
-	pos int
-	err error
+	pos  int
+	err  error
+	udef bool
 }
 
 func (err *errEval) Error() string {
@@ -63,8 +65,8 @@ func CharPosOfErr(err error) int {
 }
 
 var (
-	Undefined = Value{kind: undf}
-	Null      = Value{kind: nval}
+	Undefined = Value{kind: undefKind}
+	Null      = Value{kind: nullKind}
 )
 
 // Op is an operator for Custom values used for the Options.Op function.
@@ -126,55 +128,60 @@ func (op Op) String() string {
 type kind byte
 
 const (
-	undf kind = iota // undefined
-	nval             // null
-	bval             // bool
-	fval             // float64
-	ival             // int64
-	uval             // uint64
-	sval             // string
-	cval             // custom
+	undefKind kind = iota // undefined
+	nullKind              // null
+	boolKind              // bool
+	floatKind             // float64
+	intKind               // int64
+	uintKind              // uint64
+	strKind               // string
+	funcKind              // function
+	objKind               // custom object
 )
 
 // Value represents is the return value of Eval.
 type Value struct {
-	kind kind        // kind
-	bval bool        // bool
-	fval float64     // float64
-	ival int64       // int64
-	uval uint64      // uint64
-	sval string      // string
-	cval interface{} // custom value
+	kind     kind        // kind
+	boolVal  bool        // bool
+	floatVal float64     // float64
+	intVal   int64       // int64
+	uintVal  uint64      // uint64
+	strVal   string      // string (and function name)
+	objVal   interface{} // custom object
 }
 
 // String returns a string value.
-func String(s string) Value { return Value{kind: sval, sval: s} }
+func String(s string) Value { return Value{kind: strKind, strVal: s} }
 
 // Number returns a float64 value.
 func Number(x float64) Value { return Float64(x) }
 
 // Bool returns a bool value.
-func Bool(t bool) Value { return Value{kind: bval, bval: t} }
+func Bool(t bool) Value { return Value{kind: boolKind, boolVal: t} }
 
 // Float64 returns an int64 value.
-func Float64(x float64) Value { return Value{kind: fval, fval: x} }
+func Float64(x float64) Value { return Value{kind: floatKind, floatVal: x} }
 
 // Int64 returns an int64 value.
-func Int64(x int64) Value { return Value{kind: ival, ival: x} }
+func Int64(x int64) Value { return Value{kind: intKind, intVal: x} }
 
 // Uint64 returns a uint64 value.
-func Uint64(x uint64) Value { return Value{kind: uval, uval: x} }
+func Uint64(x uint64) Value { return Value{kind: uintKind, uintVal: x} }
 
-// Custom returns a custom user-defined value.
-func Custom(v interface{}) Value { return Value{kind: cval, cval: v} }
+// Object returns a custom user-defined object.
+func Object(v interface{}) Value { return Value{kind: objKind, objVal: v} }
 
-func (a Value) IsCustom() bool {
-	return a.kind == cval
+// Function
+func Function(name string) Value { return Value{kind: funcKind, strVal: name} }
+
+func (a Value) IsObject() bool {
+	return a.kind == objKind
 }
 
 func doOp(op Op, a, b Value, pos int, ctx *Context) (Value, error) {
 	if ctx != nil && ctx.Extender != nil {
-		v, err := ctx.Extender.Op(op, a, b, ctx)
+		info := OpInfo{Left: a, Op: op, Right: b}
+		v, err := ctx.Extender.Op(info, ctx)
 		if err == nil {
 			return v, nil
 		}
@@ -186,348 +193,350 @@ func doOp(op Op, a, b Value, pos int, ctx *Context) (Value, error) {
 }
 
 func (a Value) add(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpAdd, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: fval, fval: a.fval + b.fval}, nil
-		case ival:
-			return Value{kind: ival, ival: a.ival + b.ival}, nil
-		case uval:
-			return Value{kind: uval, uval: a.uval + b.uval}, nil
-		case sval:
-			return Value{kind: sval, sval: a.sval + b.sval}, nil
-		case bval, undf, nval:
+		case floatKind:
+			return Value{kind: floatKind, floatVal: a.floatVal + b.floatVal}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal + b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal + b.uintVal}, nil
+		case strKind:
+			return Value{kind: strKind, strVal: a.strVal + b.strVal}, nil
+		case boolKind, undefKind, nullKind:
 			a, b = a.tofval(), b.tofval()
-			return Value{kind: fval, fval: a.fval + b.fval}, nil
+			return Value{kind: floatKind, floatVal: a.floatVal + b.floatVal}, nil
 		}
 	} else if a.isnum() && b.isnum() {
 		a, b = a.tofval(), b.tofval()
-		return Value{kind: fval, fval: a.fval + b.fval}, nil
+		return Value{kind: floatKind, floatVal: a.floatVal + b.floatVal}, nil
 	}
 	a, b = a.tostr(), b.tostr()
-	return Value{kind: sval, sval: a.sval + b.sval}, nil
+	return Value{kind: strKind, strVal: a.strVal + b.strVal}, nil
 }
 
 func (a Value) isnum() bool {
 	switch a.kind {
-	case fval, ival, uval, bval, nval, undf:
+	case floatKind, intKind, uintKind, boolKind, nullKind, undefKind:
 		return true
 	}
 	return false
 }
 
 func (a Value) sub(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpSub, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: fval, fval: a.fval - b.fval}, nil
-		case ival:
-			return Value{kind: ival, ival: a.ival - b.ival}, nil
-		case uval:
-			return Value{kind: uval, uval: a.uval - b.uval}, nil
+		case floatKind:
+			return Value{kind: floatKind, floatVal: a.floatVal - b.floatVal}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal - b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal - b.uintVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: fval, fval: a.fval - b.fval}, nil
+	return Value{kind: floatKind, floatVal: a.floatVal - b.floatVal}, nil
 }
 
 func (a Value) mul(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpMul, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: fval, fval: a.fval * b.fval}, nil
-		case ival:
-			return Value{kind: ival, ival: a.ival * b.ival}, nil
-		case uval:
-			return Value{kind: uval, uval: a.uval * b.uval}, nil
+		case floatKind:
+			return Value{kind: floatKind, floatVal: a.floatVal * b.floatVal}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal * b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal * b.uintVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: fval, fval: a.fval * b.fval}, nil
+	return Value{kind: floatKind, floatVal: a.floatVal * b.floatVal}, nil
 }
 
 func (a Value) div(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpDiv, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: fval, fval: a.fval / b.fval}, nil
-		case ival:
-			return Value{kind: ival, ival: a.ival / b.ival}, nil
-		case uval:
-			return Value{kind: uval, uval: a.uval / b.uval}, nil
+		case floatKind:
+			return Value{kind: floatKind, floatVal: a.floatVal / b.floatVal}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal / b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal / b.uintVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: fval, fval: a.fval / b.fval}, nil
+	return Value{kind: floatKind, floatVal: a.floatVal / b.floatVal}, nil
 }
 func (a Value) mod(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpMod, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: fval, fval: math.Mod(a.fval, b.fval)}, nil
-		case ival:
-			return Value{kind: ival, ival: a.ival % b.ival}, nil
-		case uval:
-			return Value{kind: uval, uval: a.uval % b.uval}, nil
+		case floatKind:
+			return Value{kind: floatKind, floatVal: math.Mod(a.floatVal, b.floatVal)}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal % b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal % b.uintVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: fval, fval: math.Mod(a.fval, b.fval)}, nil
+	return Value{kind: floatKind, floatVal: math.Mod(a.floatVal, b.floatVal)}, nil
 }
 
 func (a Value) lt(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpLt, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: bval, bval: a.fval < b.fval}, nil
-		case ival:
-			return Value{kind: bval, bval: a.ival < b.ival}, nil
-		case uval:
-			return Value{kind: bval, bval: a.uval < b.uval}, nil
-		case sval:
-			return Value{kind: bval, bval: a.sval < b.sval}, nil
+		case floatKind:
+			return Value{kind: boolKind, boolVal: a.floatVal < b.floatVal}, nil
+		case intKind:
+			return Value{kind: boolKind, boolVal: a.intVal < b.intVal}, nil
+		case uintKind:
+			return Value{kind: boolKind, boolVal: a.uintVal < b.uintVal}, nil
+		case strKind:
+			return Value{kind: boolKind, boolVal: a.strVal < b.strVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: bval, bval: a.fval < b.fval}, nil
+	return Value{kind: boolKind, boolVal: a.floatVal < b.floatVal}, nil
 }
 
 func (a Value) lte(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpLte, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: bval, bval: a.fval <= b.fval}, nil
-		case ival:
-			return Value{kind: bval, bval: a.ival <= b.ival}, nil
-		case uval:
-			return Value{kind: bval, bval: a.uval <= b.uval}, nil
-		case sval:
-			return Value{kind: bval, bval: a.sval <= b.sval}, nil
+		case floatKind:
+			return Value{kind: boolKind, boolVal: a.floatVal <= b.floatVal}, nil
+		case intKind:
+			return Value{kind: boolKind, boolVal: a.intVal <= b.intVal}, nil
+		case uintKind:
+			return Value{kind: boolKind, boolVal: a.uintVal <= b.uintVal}, nil
+		case strKind:
+			return Value{kind: boolKind, boolVal: a.strVal <= b.strVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: bval, bval: a.fval <= b.fval}, nil
+	return Value{kind: boolKind, boolVal: a.floatVal <= b.floatVal}, nil
 }
 
 func (a Value) gt(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpGt, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: bval, bval: a.fval > b.fval}, nil
-		case ival:
-			return Value{kind: bval, bval: a.ival > b.ival}, nil
-		case uval:
-			return Value{kind: bval, bval: a.uval > b.uval}, nil
-		case sval:
-			return Value{kind: bval, bval: a.sval > b.sval}, nil
+		case floatKind:
+			return Value{kind: boolKind, boolVal: a.floatVal > b.floatVal}, nil
+		case intKind:
+			return Value{kind: boolKind, boolVal: a.intVal > b.intVal}, nil
+		case uintKind:
+			return Value{kind: boolKind, boolVal: a.uintVal > b.uintVal}, nil
+		case strKind:
+			return Value{kind: boolKind, boolVal: a.strVal > b.strVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: bval, bval: a.fval > b.fval}, nil
+	return Value{kind: boolKind, boolVal: a.floatVal > b.floatVal}, nil
 }
 func (a Value) gte(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpGte, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: bval, bval: a.fval >= b.fval}, nil
-		case ival:
-			return Value{kind: bval, bval: a.ival >= b.ival}, nil
-		case uval:
-			return Value{kind: bval, bval: a.uval >= b.uval}, nil
-		case sval:
-			return Value{kind: bval, bval: a.sval >= b.sval}, nil
+		case floatKind:
+			return Value{kind: boolKind, boolVal: a.floatVal >= b.floatVal}, nil
+		case intKind:
+			return Value{kind: boolKind, boolVal: a.intVal >= b.intVal}, nil
+		case uintKind:
+			return Value{kind: boolKind, boolVal: a.uintVal >= b.uintVal}, nil
+		case strKind:
+			return Value{kind: boolKind, boolVal: a.strVal >= b.strVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: bval, bval: a.fval >= b.fval}, nil
+	return Value{kind: boolKind, boolVal: a.floatVal >= b.floatVal}, nil
 }
 func (a Value) eq(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpEq, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: bval, bval: a.fval == b.fval}, nil
-		case ival:
-			return Value{kind: bval, bval: a.ival == b.ival}, nil
-		case uval:
-			return Value{kind: bval, bval: a.uval == b.uval}, nil
-		case sval:
-			return Value{kind: bval, bval: a.sval == b.sval}, nil
+		case floatKind:
+			return Value{kind: boolKind, boolVal: a.floatVal == b.floatVal}, nil
+		case intKind:
+			return Value{kind: boolKind, boolVal: a.intVal == b.intVal}, nil
+		case uintKind:
+			return Value{kind: boolKind, boolVal: a.uintVal == b.uintVal}, nil
+		case strKind:
+			return Value{kind: boolKind, boolVal: a.strVal == b.strVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: bval, bval: a.fval == b.fval}, nil
+	return Value{kind: boolKind, boolVal: a.floatVal == b.floatVal}, nil
 }
 func (a Value) neq(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpNeq, a, b, pos, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
-		case fval:
-			return Value{kind: bval, bval: a.fval != b.fval}, nil
-		case ival:
-			return Value{kind: bval, bval: a.ival != b.ival}, nil
-		case uval:
-			return Value{kind: bval, bval: a.uval != b.uval}, nil
-		case sval:
-			return Value{kind: bval, bval: a.sval != b.sval}, nil
+		case floatKind:
+			return Value{kind: boolKind, boolVal: a.floatVal != b.floatVal}, nil
+		case intKind:
+			return Value{kind: boolKind, boolVal: a.intVal != b.intVal}, nil
+		case uintKind:
+			return Value{kind: boolKind, boolVal: a.uintVal != b.uintVal}, nil
+		case strKind:
+			return Value{kind: boolKind, boolVal: a.strVal != b.strVal}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
-	return Value{kind: bval, bval: a.fval != b.fval}, nil
+	return Value{kind: boolKind, boolVal: a.floatVal != b.floatVal}, nil
 }
 
 func (a Value) and(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpAnd, a, b, pos, ctx)
 	}
 	a, b = a.tobool(), b.tobool()
-	return Value{kind: bval, bval: a.bval && b.bval}, nil
+	return Value{kind: boolKind, boolVal: a.boolVal && b.boolVal}, nil
 }
 
 func (a Value) or(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpOr, a, b, pos, ctx)
 	}
 	a, b = a.tobool(), b.tobool()
-	return Value{kind: bval, bval: a.bval || b.bval}, nil
+	return Value{kind: boolKind, boolVal: a.boolVal || b.boolVal}, nil
 }
 
 func (a Value) coalesce(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == cval || b.kind == cval {
+	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpCoal, a, b, pos, ctx)
 	}
 	switch a.kind {
-	case undf, nval:
+	case undefKind, nullKind:
 		return b, nil
 	}
 	return a, nil
 }
 
 func (a Value) tostr() Value {
+	var s string
 	switch a.kind {
-	case nval:
-		return Value{kind: sval, sval: "null"}
-	case bval:
-		return Value{kind: sval, sval: strconv.FormatBool(a.bval)}
-	case fval:
-		var s string
-		if math.IsInf(a.fval, 0) {
-			if a.fval < 0 {
+	case nullKind:
+		s = "null"
+	case boolKind:
+		s = strconv.FormatBool(a.boolVal)
+	case floatKind:
+		if math.IsInf(a.floatVal, 0) {
+			if a.floatVal < 0 {
 				s = "-Infinity"
 			} else {
 				s = "Infinity"
 			}
 		} else {
-			s = strconv.FormatFloat(a.fval, 'f', -1, 64)
+			s = strconv.FormatFloat(a.floatVal, 'f', -1, 64)
 		}
-		return Value{kind: sval, sval: s}
-	case ival:
-		return Value{kind: sval, sval: strconv.FormatInt(a.ival, 10)}
-	case uval:
-		return Value{kind: sval, sval: strconv.FormatUint(a.uval, 10)}
-	case sval:
-		return a
-	case cval:
-		if v, ok := a.cval.(stringer); ok {
-			return Value{kind: sval, sval: v.String()}
+	case intKind:
+		s = strconv.FormatInt(a.intVal, 10)
+	case uintKind:
+		s = strconv.FormatUint(a.uintVal, 10)
+	case strKind:
+		s = a.strVal
+	case funcKind:
+		s = "[Function " + a.strVal + "]"
+	case objKind:
+		if v, ok := a.objVal.(stringer); ok {
+			s = v.String()
 		}
-		return Value{kind: sval, sval: fmt.Sprint(a.cval)}
+		s = fmt.Sprint(a.objVal)
 	default:
-		return Value{kind: sval, sval: "undefined"}
+		s = "undefined"
 	}
+	return Value{kind: strKind, strVal: s}
 }
 
 func (a Value) tofval() Value {
 	switch a.kind {
-	case nval:
-		return Value{kind: fval, fval: 0}
-	case bval:
-		if a.bval {
-			return Value{kind: fval, fval: 1}
+	case nullKind:
+		return Value{kind: floatKind, floatVal: 0}
+	case boolKind:
+		if a.boolVal {
+			return Value{kind: floatKind, floatVal: 1}
 		}
-		return Value{kind: fval, fval: 0}
-	case fval:
+		return Value{kind: floatKind, floatVal: 0}
+	case floatKind:
 		return a
-	case ival:
-		return Value{kind: fval, fval: float64(a.ival)}
-	case uval:
-		return Value{kind: fval, fval: float64(a.uval)}
-	case sval:
-		x, err := strconv.ParseFloat(a.sval, 64)
+	case intKind:
+		return Value{kind: floatKind, floatVal: float64(a.intVal)}
+	case uintKind:
+		return Value{kind: floatKind, floatVal: float64(a.uintVal)}
+	case strKind:
+		x, err := strconv.ParseFloat(a.strVal, 64)
 		if err != nil {
 			break
 		}
-		return Value{kind: fval, fval: x}
-	case cval:
-		if v, ok := a.cval.(float64er); ok {
-			return Value{kind: fval, fval: v.Float64()}
+		return Value{kind: floatKind, floatVal: x}
+	case objKind:
+		if v, ok := a.objVal.(float64er); ok {
+			return Value{kind: floatKind, floatVal: v.Float64()}
 		}
 		return a.tostr().tofval()
 	}
-	return Value{kind: fval, fval: math.NaN()}
+	return Value{kind: floatKind, floatVal: math.NaN()}
 }
 
 func (a Value) tobool() Value {
-	if a.kind == bval {
+	if a.kind == boolKind {
 		return a
 	}
 	var t bool
 	switch a.kind {
-	case sval:
-		t = a.sval != ""
-	case cval:
-		if v, ok := a.cval.(booler); ok {
+	case strKind:
+		t = a.strVal != ""
+	case objKind:
+		if v, ok := a.objVal.(booler); ok {
 			t = v.Bool()
 		} else {
-			t = a.tofval().fval != 0
+			t = a.tofval().floatVal != 0
 		}
-	case undf, nval:
+	case undefKind, nullKind:
 		t = false
 	default:
-		t = a.tofval().fval != 0
+		t = a.tofval().floatVal != 0
 	}
-	return Value{kind: bval, bval: t}
+	return Value{kind: boolKind, boolVal: t}
 }
 
 // Bool returns a boolean representation.
 func (a Value) Bool() bool {
-	return a.tobool().bval
+	return a.tobool().boolVal
 }
 
 // String returns a string representation.
 func (a Value) String() string {
-	return a.tostr().sval
+	return a.tostr().strVal
 }
 
 // Number returns s float64 representation.
@@ -537,37 +546,37 @@ func (a Value) Number() float64 {
 
 // Float64 returns s float64 representation.
 func (a Value) Float64() float64 {
-	return a.tofval().fval
+	return a.tofval().floatVal
 }
 
 // Int64 returns an int64 representation.
 func (a Value) Int64() int64 {
 	switch a.kind {
-	case ival:
-		return a.ival
-	case uval:
-		return int64(a.uval)
-	case cval:
-		if v, ok := a.cval.(int64er); ok {
+	case intKind:
+		return a.intVal
+	case uintKind:
+		return int64(a.uintVal)
+	case objKind:
+		if v, ok := a.objVal.(int64er); ok {
 			return v.Int64()
 		}
 	}
-	return int64(a.tofval().fval)
+	return int64(a.tofval().floatVal)
 }
 
 // Uint64 returns a uint64 representation.
 func (a Value) Uint64() uint64 {
 	switch a.kind {
-	case ival:
-		return uint64(a.ival)
-	case uval:
-		return a.uval
-	case cval:
-		if v, ok := a.cval.(uint64er); ok {
+	case intKind:
+		return uint64(a.intVal)
+	case uintKind:
+		return a.uintVal
+	case objKind:
+		if v, ok := a.objVal.(uint64er); ok {
 			return v.Uint64()
 		}
 	}
-	return uint64(a.tofval().fval)
+	return uint64(a.tofval().floatVal)
 }
 
 // Value returns the native Go representation, which is one of the following:
@@ -576,18 +585,18 @@ func (a Value) Uint64() uint64 {
 //
 func (a Value) Value() interface{} {
 	switch a.kind {
-	case cval:
-		return a.cval
-	case bval:
-		return a.bval
-	case fval:
-		return a.fval
-	case ival:
-		return a.ival
-	case uval:
-		return a.uval
-	case sval:
-		return a.sval
+	case objKind:
+		return a.objVal
+	case boolKind:
+		return a.boolVal
+	case floatKind:
+		return a.floatVal
+	case intKind:
+		return a.intVal
+	case uintKind:
+		return a.uintVal
+	case strKind:
+		return a.strVal
 	default:
 		return nil
 	}
@@ -610,9 +619,15 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
+
+	var left Value
+	var leftReady bool
+
+	// first look for non-chainable atoms
 	switch expr[0] {
 	case '0':
 		if len(expr) > 1 && (expr[1] == 'x' || expr[1] == 'X') {
+			// hexadecimal
 			x, err := strconv.ParseUint(expr[2:], 16, 64)
 			if err != nil {
 				return Undefined, errSyntax(pos)
@@ -627,61 +642,272 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 		}
 		return Float64(x), nil
 	case '"', '\'', '`':
-		s, ok := parseString(expr)
+		var s string
+		var ok bool
+		s, raw, ok := parseString(expr)
 		if !ok {
 			return Undefined, errSyntax(pos)
 		}
-		return String(s), nil
-	case 't':
-		if expr == "true" {
-			return Bool(true), nil
-		}
-	case 'f':
-		if expr == "false" {
-			return Bool(false), nil
-		}
-	case 'N':
-		if expr == "NaN" {
-			return Float64(math.NaN()), nil
-		}
-	case 'I':
-		if expr == "Infinity" {
-			return Float64(math.Inf(+1)), nil
-		}
-	case 'u':
-		if expr == "undefined" {
-			return Undefined, nil
-		}
-	case 'n':
-		if expr == "null" {
-			return Null, nil
-		}
-	case '(':
-		// grouping
-		if expr[len(expr)-1] != ')' {
+		left = String(s)
+		leftReady = true
+		expr = expr[len(raw):]
+		pos += len(raw)
+	case '(', '{', '[':
+		g, err := readGroup(expr, pos)
+		if err != nil {
 			return Undefined, errSyntax(pos)
 		}
-		return evalExpr(expr[1:len(expr)-1], pos+1, steps, nil, ctx)
-	}
-	if ctx != nil && ctx.Extender != nil {
-		res, err := ctx.Extender.Eval(expr, ctx)
-		if err != nil {
-			if err == ErrUndefined {
-				return Undefined, errUndefined(expr, pos)
+		if g[0] == '(' {
+			if g[len(g)-1] != ')' {
+				return Undefined, errSyntax(pos)
 			}
-			return Undefined, errReference(err, pos)
+			// paren groups can be evaluated and used as the leading value.
+			left, err = evalExpr(g[1:len(g)-1], pos+1, steps, nil, ctx)
+			if err != nil {
+				return Undefined, errSyntax(pos)
+			}
+			leftReady = true
+			expr = expr[len(g):]
+			pos += len(g)
+		} else {
+			// '{', '[' not currently allowed as a leading value
+			// Perhaps in the future.
+			return Undefined, errSyntax(pos)
 		}
-		return res, nil
 	}
-	return Undefined, errUndefined(expr, pos)
+
+	var leftIdent string
+
+	if !leftReady {
+		// probably a chainable identifier
+		ident, ok := readIdent(expr)
+		if !ok {
+			return Undefined, errSyntax(pos)
+		}
+		switch ident {
+		case "new", "typeof", "void", "await", "in", "instanceof", "yield":
+			return Undefined, errSyntax(pos)
+		case "true":
+			left = Bool(true)
+		case "false":
+			left = Bool(false)
+		case "NaN":
+			left = Float64(math.NaN())
+		case "Infinity":
+			left = Float64(math.Inf(+1))
+		case "undefined":
+			left = Undefined
+		case "null":
+			left = Null
+		default:
+			var err error
+			left, err = getRefValue(false, Undefined, ident, pos, ctx)
+			if err != nil {
+				return Undefined, err
+			}
+		}
+		leftReady = true
+		expr = expr[len(ident):]
+		pos += len(ident)
+		leftIdent = ident
+	}
+
+	var leftLeft Value
+	var hasLeftLeft bool
+
+	// read each chained component
+	optionalChaining := false
+	for {
+		// There are more components to read
+		expr, pos = trim(expr, pos)
+		if len(expr) == 0 {
+			break
+		}
+		switch expr[0] {
+		case '?':
+			// Optional chaining
+			if len(expr) == 1 || expr[1] != '.' {
+				return Undefined, errSyntax(pos)
+			}
+			expr = expr[1:]
+			pos++
+			optionalChaining = true
+			fallthrough
+		case '.':
+			// Member Access
+			expr = expr[1:]
+			pos++
+			expr, pos = trim(expr, pos)
+			ident, ok := readIdent(expr)
+			if !ok {
+				return Undefined, errSyntax(pos)
+			}
+			val, err := getRefValue(true, left, ident, pos, ctx)
+			if err != nil {
+				var skipErr bool
+				if optionalChaining {
+					if err, ok := err.(*errEval); ok {
+						if err.udef {
+							skipErr = true
+						}
+					}
+				}
+				if !skipErr {
+					return Undefined, err
+				}
+			}
+			leftLeft = left
+			hasLeftLeft = true
+			left = val
+			expr = expr[len(ident):]
+			pos += len(ident)
+			leftIdent = ident
+		case '(', '[':
+			g, err := readGroup(expr, pos)
+			if err != nil {
+				return Undefined, errSyntax(pos)
+			}
+			if g[len(g)-1] != closech(g[0]) {
+				return Undefined, errSyntax(pos)
+			}
+			if g[0] == '(' {
+				// Function call
+				if left.kind != funcKind {
+					return Undefined,
+						fmt.Errorf("Uncaught TypeError: %s is not a function",
+							leftIdent)
+				}
+				var info CallInfo
+				info.Chain = hasLeftLeft
+				info.Value = leftLeft
+				info.Name = left.strVal
+				info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx}
+				if ctx == nil || ctx.Extender == nil {
+					return Undefined, errUndefined(left.strVal, pos)
+				}
+				val, err := ctx.Extender.Call(info, ctx)
+				if err != nil {
+					return Undefined, err
+				}
+				leftLeft = left
+				hasLeftLeft = true
+				left = val
+			} else {
+				// Computed Member Access
+				return Undefined, errors.New("computed member access not allowed")
+				// val, err := evalExpr(raw[1:len(raw)-1], pos+1, steps, nil, ctx)
+				// if err != nil {
+				// 	return Undefined, errSyntax(pos)
+				// }
+			}
+			expr = expr[len(g):]
+			pos += len(g)
+		default:
+			return Undefined, errSyntax(pos)
+		}
+	}
+	return left, nil
+}
+
+type ComputedArgs struct {
+	values []Value
+}
+
+func (args *ComputedArgs) Get(index int) Value {
+	if index < 0 || index > len(args.values) {
+		return Undefined
+	}
+	return args.values[index]
+}
+
+func (args *ComputedArgs) Count() int {
+	return len(args.values)
+}
+
+type Args struct {
+	expr string
+	ctx  *Context
+}
+
+func (args *Args) Compute() (ComputedArgs, error) {
+	var values []Value
+	_, err := EvalForEach(args.expr, func(value Value) error {
+		values = append(values, value)
+		return nil
+	}, args.ctx)
+	return ComputedArgs{values}, err
+}
+
+func (args *Args) ForEachValue(iter func(value Value) error) error {
+	_, err := EvalForEach(args.expr, iter, args.ctx)
+	return err
+}
+
+func getRefValue(chain bool, left Value, ident string, pos int, ctx *Context,
+) (Value, error) {
+	if ctx == nil || ctx.Extender == nil {
+		return Undefined, errUndefined(ident, pos)
+	}
+	info := RefInfo{Chain: chain, Value: left, Ident: ident}
+	res, err := ctx.Extender.Ref(info, ctx)
+	if err != nil {
+		if err == ErrUndefined {
+			return Undefined, errUndefined(ident, pos)
+		}
+		return Undefined, errReference(err, pos)
+	}
+	return res, nil
+}
+
+func readIDStart(expr string) (int, bool) {
+	if len(expr) == 0 {
+		return 0, true
+	}
+	if expr[0] == '$' || expr[0] == '_' ||
+		(expr[0] >= 'A' && expr[0] <= 'Z') ||
+		(expr[0] >= 'a' && expr[0] <= 'z') {
+		return 1, true
+	}
+	return 0, false
+}
+
+func readIDContinue(expr string) (int, bool) {
+	if len(expr) == 0 {
+		return 0, true
+	}
+	if expr[0] == '$' || expr[0] == '_' ||
+		(expr[0] >= 'A' && expr[0] <= 'Z') ||
+		(expr[0] >= 'a' && expr[0] <= 'z') ||
+		(expr[0] >= '0' && expr[0] <= '9') {
+		return 1, true
+	}
+	return 0, false
+}
+
+func readIdent(expr string) (ident string, ok bool) {
+	// Only ascii identifiers for now
+	var i int
+	var z int
+	z, ok = readIDStart(expr[i:])
+	if !ok || z == 0 {
+		return "", false
+	}
+	i += z
+	for {
+		z, ok = readIDContinue(expr[i:])
+		if !ok || z == 0 {
+			return expr[:i], true
+		}
+		i += z
+	}
 }
 
 // parseString parses a Javascript encoded string.
 // Adapted from the GJSON project.
-func parseString(data string) (out string, ok bool) {
+func parseString(data string) (out, raw string, ok bool) {
 	var esc bool
 	if len(data) < 2 {
-		return "", false
+		return "", "", false
 	}
 	qch := data[0]
 	for i := 1; i < len(data); i++ {
@@ -692,7 +918,7 @@ func parseString(data string) (out string, ok bool) {
 			esc = true
 			i++
 			if i == len(data) {
-				return "", false
+				return "", "", false
 			}
 			switch data[i] {
 			case 'u':
@@ -705,17 +931,17 @@ func parseString(data string) (out string, ok bool) {
 							break
 						}
 						if !ishex(data[i]) {
-							return "", false
+							return "", "", false
 						}
 					}
 					if !end {
-						return "", false
+						return "", "", false
 					}
 				} else {
 					for j := 0; j < 4; j++ {
 						i++
 						if i >= len(data) || !ishex(data[i]) {
-							return "", false
+							return "", "", false
 						}
 					}
 				}
@@ -723,22 +949,22 @@ func parseString(data string) (out string, ok bool) {
 				for j := 0; j < 2; j++ {
 					i++
 					if i >= len(data) || !ishex(data[i]) {
-						return "", false
+						return "", "", false
 					}
 				}
 			}
 		} else if data[i] == qch {
-			if i != len(data)-1 {
-				return "", false
-			}
+			// if i != len(data)-1 {
+			// 	return "", "", false
+			// }
 			s := data[1:i]
 			if esc {
 				s = unescapeString(s)
 			}
-			return s, true
+			return s, data[:i+1], true
 		}
 	}
-	return "", false
+	return "", "", false
 }
 
 // runeit returns the rune from the the \uXXXX
@@ -1052,7 +1278,7 @@ func equal(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	if boolit {
 		right = right.tobool()
 		if neg {
-			right.bval = !right.bval
+			right.boolVal = !right.boolVal
 		}
 	}
 	switch op {
@@ -1356,11 +1582,32 @@ func evalExpr(expr string, pos, steps int, iter func(value Value) error,
 	return evalAuto(stepComma, expr, 0, steps, iter, ctx)
 }
 
+type RefInfo struct {
+	Chain bool
+	Value Value
+	Ident string
+}
+
+type OpInfo struct {
+	Left  Value
+	Op    Op
+	Right Value
+}
+
+type CallInfo struct {
+	Chain bool
+	Value Value
+	Name  string
+	Args  Args
+}
+
 type Extender interface {
-	// Eval allows for custom evaluation of an expression.
-	Eval(expr string, ctx *Context) (Value, error)
+	// ref allows for custom evaluation of an expression.
+	Ref(info RefInfo, ctx *Context) (Value, error)
 	// Op allows for custom evaluation of an expression.
-	Op(op Op, a, b Value, ctx *Context) (Value, error)
+	Op(info OpInfo, ctx *Context) (Value, error)
+
+	Call(info CallInfo, ctx *Context) (Value, error)
 }
 
 // Context for Eval
@@ -1372,33 +1619,40 @@ type Context struct {
 // NewExtender is a convenience function for creating a simple extender using
 // the provided eval and op functions.
 func NewExtender(
-	eval func(expr string, ctx *Context) (Value, error),
-	op func(op Op, a, b Value, ctx *Context) (Value, error),
+	ref func(info RefInfo, ctx *Context) (Value, error),
+	call func(info CallInfo, ctx *Context) (Value, error),
+	op func(info OpInfo, ctx *Context) (Value, error),
 ) Extender {
-	if eval == nil {
-		eval = func(expr string, ctx *Context) (Value, error) {
+	if ref == nil {
+		ref = func(info RefInfo, ctx *Context,
+		) (Value, error) {
 			return Undefined, ErrUndefined
 		}
 	}
 	if op == nil {
-		op = func(op Op, a, b Value, ctx *Context) (Value, error) {
+		op = func(op OpInfo, ctx *Context) (Value, error) {
 			return Undefined, ErrUndefined
 		}
 	}
-	return &simpleExtender{eval, op}
+	return &simpleExtender{ref, call, op}
 }
 
 type simpleExtender struct {
-	eval func(expr string, ctx *Context) (Value, error)
-	op   func(op Op, a, b Value, ctx *Context) (Value, error)
+	ref  func(info RefInfo, ctx *Context) (Value, error)
+	call func(info CallInfo, ctx *Context) (Value, error)
+	op   func(info OpInfo, ctx *Context) (Value, error)
 }
 
-func (e *simpleExtender) Eval(expr string, ctx *Context) (Value, error) {
-	return e.eval(expr, ctx)
+func (e *simpleExtender) Ref(info RefInfo, ctx *Context) (Value, error) {
+	return e.ref(info, ctx)
 }
 
-func (e *simpleExtender) Op(op Op, a, b Value, ctx *Context) (Value, error) {
-	return e.op(op, a, b, ctx)
+func (e *simpleExtender) Call(info CallInfo, ctx *Context) (Value, error) {
+	return e.call(info, ctx)
+}
+
+func (e *simpleExtender) Op(op OpInfo, ctx *Context) (Value, error) {
+	return e.op(op, ctx)
 }
 
 // Operator Precedence
