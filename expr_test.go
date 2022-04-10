@@ -181,7 +181,7 @@ var testTable = []string{
 	(`100 + blank_err`), (`ReferenceError: blank_err is not defined`),
 	(`100 + custom_err`), (`ReferenceError: hiya`),
 	(`"a \u\"567"`), (`SyntaxError`),
-	// (`(hello) + (jello`), (`ReferenceError: hello is not defined`),
+	(`(hello) + (jello`), (`SyntaxError`),
 	(`(1) + (jello`), (`SyntaxError`),
 	(`(1) && `), (`SyntaxError`),
 	(` && (1)`), (`SyntaxError`),
