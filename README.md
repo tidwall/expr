@@ -55,125 +55,162 @@ Example expressions:
 
 ```js
 timestamp
-timestamp - $1h
-now + $24h
-timestamp < now - $24h ? "old" : "new"
+timestamp - dur('1h')
+now() + dur('24h')
+timestamp < now() - dur('24h') ? "old" : "new"
 ((minX + maxX) / 2) + "," + ((minY + maxY) / 2)
 ```
 
 In Go, you would provide a custom `Extender` to the `Eval` function.
 
 ```go
-// Create a user data map that can be referenced by the Eval function.
-umap := make(map[string]Value)
+package main
 
-// Add a bounding box to the user data map.
-umap["minX"] = Number(112.8192)
-umap["minY"] = Number(33.4738)
-umap["maxX"] = Number(113.9146)
-umap["maxY"] = Number(34.3367)
+import (
+	"fmt"
+	"time"
 
-// Add a timestamp value to the user data map.
-ts, _ := time.Parse(time.RFC3339, "2022-03-31T09:00:00Z")
-umap["timestamp"] = Object(ts)
-
-// Set up an evaluation extender for referencing the user data and
-// using operators on custom types.
-ext := NewExtender(
-	func(expr string, ctx *Context) (Value, error) {
-		switch expr {
-		case "now":
-			// Get the seconds since Epoch.
-			return Object(time.Now()), nil
-		default:
-			if len(expr) >= 1 && expr[0] == '$' {
-				// Try parsing a time.Duration.
-				s := expr[1:]
-				d, err := time.ParseDuration(s)
-				if err != nil {
-					return Undefined, err
-				}
-				// Valid time.Duration, return as an Int64 value
-				return Int64(int64(d)), nil
-			}
-			// Not a time.Duration, check the umap for the data
-			umap, ok := ctx.UserData.(map[string]Value)
-			if !ok {
-				return Undefined, ErrUndefined
-			}
-			return umap[expr], nil
-		}
-	},
-	func(op Op, a, b Value, ctx *Context) (Value, error) {
-		// Try to convert a and/or b to time.Time
-		at, aok := a.Value().(time.Time)
-		bt, bok := b.Value().(time.Time)
-		if aok && bok {
-			// Both values are time.Time.
-			// Perform comparison operation.
-			switch op {
-			case OpLt:
-				return Bool(at.Before(bt)), nil
-			case OpLte:
-				return Bool(!bt.After(at)), nil
-			case OpGt:
-				return Bool(at.After(bt)), nil
-			case OpGte:
-				return Bool(!at.Before(bt)), nil
-			}
-		} else if aok || bok {
-			// Either A or B are time.Time.
-			// Perform arithmatic add/sub operation and return a
-			// recalcuated time.Time value.
-			var x time.Time
-			var y int64
-			if aok {
-				x = at
-				y = b.Int64()
-			} else {
-				x = bt
-				y = a.Int64()
-			}
-			switch op {
-			case OpAdd:
-				return Object(x.Add(time.Duration(y))), nil
-			case OpSub:
-				return Object(x.Add(-time.Duration(y))), nil
-			}
-		}
-		return Undefined, ErrUndefined
-	},
+	"github.com/tidwall/expr"
 )
 
-// Set up a custom context that holds user data and the extender.
-ctx := Context{UserData: umap, Extender: ext}
+func main() {
+	// Create a user data map that can be referenced by the Eval function.
+	dict := make(map[string]expr.Value)
 
-var res Value
+	// Add a bounding box to the user dictionary.
+	dict["minX"] = expr.Number(112.8192)
+	dict["minY"] = expr.Number(33.4738)
+	dict["maxX"] = expr.Number(113.9146)
+	dict["maxY"] = expr.Number(34.3367)
 
-// Return the timestamp.
-res, _ = Eval(`timestamp`, &ctx)
-fmt.Println(res)
+	// Add a timestamp value to the user dictionary.
+	ts, _ := time.Parse(time.RFC3339, "2022-03-31T09:00:00Z")
+	dict["timestamp"] = expr.Object(ts)
 
-// Subtract an hour from the timestamp.
-res, _ = Eval(`timestamp - $1h`, &ctx)
-fmt.Println(res)
+	// Set up an evaluation extender for referencing the user data, and
+	// using functions and operators on custom types.
+	ext := expr.NewExtender(
+		func(info expr.RefInfo, ctx *expr.Context) (expr.Value, error) {
+			if info.Chain {
+				// Only use globals in this example.
+				// No chained objects like `user.name`.
+				return expr.Undefined, nil
+			}
+			switch info.Ident {
+			case "now":
+				// The `now()` function
+				return expr.Function("now"), nil
+			case "dur":
+				// The `dur(str)` function
+				return expr.Function("duration"), nil
+			default:
+				// Check the user dictionary.
+				umap, ok := ctx.UserData.(map[string]expr.Value)
+				if !ok {
+					// value not found in
+					return expr.Undefined, nil
+				}
+				return umap[info.Ident], nil
+			}
+		},
+		func(info expr.CallInfo, ctx *expr.Context) (expr.Value, error) {
+			if info.Chain {
+				// Only use globals in this example.
+				// No chained function like `user.name()`.
+				return expr.Undefined, nil
+			}
+			switch info.Ident {
+			case "now":
+				// Return the current date/time.
+				return expr.Object(time.Now()), nil
+			case "dur":
+				// Compute the arguments.
+				args, err := info.Args.Compute()
+				if err != nil {
+					return expr.Undefined, err
+				}
+				// Parse the duration using the first argument.
+				d, err := time.ParseDuration(args.Get(0).String())
+				if err != nil {
+					return expr.Undefined, err
+				}
+				// Valid time.Duration, return as an Int64 value
+				return expr.Int64(int64(d)), nil
+			default:
+				return expr.Undefined, nil
+			}
+		},
+		func(info expr.OpInfo, ctx *expr.Context) (expr.Value, error) {
+			// Try to convert a and/or b to time.Time
+			left, leftOK := info.Left.Value().(time.Time)
+			right, rightOK := info.Right.Value().(time.Time)
+			if leftOK && rightOK {
+				// Both values are time.Time.
+				// Perform comparison operation.
+				switch info.Op {
+				case expr.OpLt:
+					return expr.Bool(left.Before(right)), nil
+				case expr.OpLte:
+					return expr.Bool(!right.After(left)), nil
+				case expr.OpGt:
+					return expr.Bool(left.After(right)), nil
+				case expr.OpGte:
+					return expr.Bool(!left.Before(right)), nil
+				}
+			} else if leftOK || rightOK {
+				// Either A or B are time.Time.
+				// Perform arithmatic add/sub operation and return a
+				// recalcuated time.Time value.
+				var x time.Time
+				var y int64
+				if leftOK {
+					x = left
+					y = info.Right.Int64()
+				} else {
+					x = right
+					y = info.Left.Int64()
+				}
+				switch info.Op {
+				case expr.OpAdd:
+					return expr.Object(x.Add(time.Duration(y))), nil
+				case expr.OpSub:
+					return expr.Object(x.Add(-time.Duration(y))), nil
+				}
+			}
+			return expr.Undefined, nil
+		},
+	)
 
-// Add one day to the current time.
-res, _ = Eval(`now + $24h`, &ctx)
-fmt.Println(res)
+	// Set up a custom expr.context that holds user data and the extender.
+	ctx := expr.Context{UserData: dict, Extender: ext}
 
-// See if timestamp is older than a day
-res, _ = Eval(`timestamp < now - $24h ? "old" : "new"`, &ctx)
-fmt.Println(res)
+	var res expr.Value
 
-// Get the center of the bounding box as a concatenated string.
-res, _ = Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &ctx)
-fmt.Println(res)
+	// Return the timestamp.
+	res, _ = expr.Eval(`timestamp`, &ctx)
+	fmt.Println(res)
 
-// Output:
-// 2022-03-31 09:00:00 +0000 UTC
-// 2022-03-31 08:00:00 +0000 UTC
-// 2022-04-02 06:00:40.834656 -0700 MST m=+86400.000714835
-// old
-// 113.36689999999999,33.905249999999995
+	// Subtract an hour from the timestamp.
+	res, _ = expr.Eval(`timestamp - dur('1h')`, &ctx)
+	fmt.Println(res)
+
+	// Add one day to the current time.
+	res, _ = expr.Eval(`now() + dur('24h')`, &ctx)
+	fmt.Println(res)
+
+	// See if timestamp is older than a day
+	res, _ = expr.Eval(`timestamp < now() - dur('24h') ? "old" : "new"`, &ctx)
+	fmt.Println(res)
+
+	// Get the center of the bounding box as a concatenated string.
+	res, _ = expr.Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &ctx)
+	fmt.Println(res)
+
+	// Output:
+	// 2022-03-31 09:00:00 +0000 UTC
+	// 2022-03-31 08:00:00 +0000 UTC
+	// 2022-04-02 06:00:40.834656 -0700 MST m=+86400.000714835
+	// old
+	// 113.36689999999999,33.905249999999995
+}
 ```

@@ -348,7 +348,7 @@ func TestEvalTable(t *testing.T) {
 			if err != nil {
 				return Undefined, err
 			}
-			switch info.Name {
+			switch info.Ident {
 			case "i64":
 				x, _ := strconv.ParseInt(args.Get(0).String(), 10, 64)
 				return Int64(x), nil
@@ -879,74 +879,99 @@ func TestTypeOf(t *testing.T) {
 
 func TestReadme(t *testing.T) {
 	// Create a user data map that can be referenced by the Eval function.
-	umap := make(map[string]Value)
+	dict := make(map[string]Value)
 
-	// Add a bounding box to the user data map.
-	umap["minX"] = Number(112.8192)
-	umap["minY"] = Number(33.4738)
-	umap["maxX"] = Number(113.9146)
-	umap["maxY"] = Number(34.3367)
+	// Add a bounding box to the user dictionary.
+	dict["minX"] = Number(112.8192)
+	dict["minY"] = Number(33.4738)
+	dict["maxX"] = Number(113.9146)
+	dict["maxY"] = Number(34.3367)
 
-	// Add a timestamp value to the user data map.
+	// Add a timestamp value to the user dictionary.
 	ts, _ := time.Parse(time.RFC3339, "2022-03-31T09:00:00Z")
-	umap["timestamp"] = Object(ts)
+	dict["timestamp"] = Object(ts)
 
-	// Set up an evaluation extender for referencing the user data and
-	// using operators on custom types.
+	// Set up an evaluation extender for referencing the user data, and
+	// using functions and operators on custom types.
 	ext := NewExtender(
 		func(info RefInfo, ctx *Context) (Value, error) {
+			if info.Chain {
+				// Only use globals in this example.
+				// No chained objects like `user.name`.
+				return Undefined, nil
+			}
 			switch info.Ident {
 			case "now":
-				// Get the seconds since Epoch.
-				return Object(time.Now()), nil
+				// The `now()` function
+				return Function("now"), nil
+			case "dur":
+				// The `dur(str)` function
+				return Function("duration"), nil
 			default:
-				if len(info.Ident) >= 1 && info.Ident[0] == '$' {
-					// Try parsing a time.Duration.
-					s := info.Ident[1:]
-					d, err := time.ParseDuration(s)
-					if err != nil {
-						return Undefined, err
-					}
-					// Valid time.Duration, return as an Int64 value
-					return Int64(int64(d)), nil
-				}
-				// Not a time.Duration, check the umap for the data
+				// Check the user dictionary.
 				umap, ok := ctx.UserData.(map[string]Value)
 				if !ok {
+					// value not found in
 					return Undefined, nil
 				}
 				return umap[info.Ident], nil
 			}
 		},
-		nil,
+		func(info CallInfo, ctx *Context) (Value, error) {
+			if info.Chain {
+				// Only use globals in this example.
+				// No chained function like `user.name()`.
+				return Undefined, nil
+			}
+			switch info.Ident {
+			case "now":
+				// Return the current date/time.
+				return Object(time.Now()), nil
+			case "dur":
+				// Compute the arguments.
+				args, err := info.Args.Compute()
+				if err != nil {
+					return Undefined, err
+				}
+				// Parse the duration using the first argument.
+				d, err := time.ParseDuration(args.Get(0).String())
+				if err != nil {
+					return Undefined, err
+				}
+				// Valid time.Duration, return as an Int64 value
+				return Int64(int64(d)), nil
+			default:
+				return Undefined, nil
+			}
+		},
 		func(info OpInfo, ctx *Context) (Value, error) {
 			// Try to convert a and/or b to time.Time
-			at, aok := info.Left.Value().(time.Time)
-			bt, bok := info.Right.Value().(time.Time)
-			if aok && bok {
+			left, leftOK := info.Left.Value().(time.Time)
+			right, rightOK := info.Right.Value().(time.Time)
+			if leftOK && rightOK {
 				// Both values are time.Time.
 				// Perform comparison operation.
 				switch info.Op {
 				case OpLt:
-					return Bool(at.Before(bt)), nil
+					return Bool(left.Before(right)), nil
 				case OpLte:
-					return Bool(!bt.After(at)), nil
+					return Bool(!right.After(left)), nil
 				case OpGt:
-					return Bool(at.After(bt)), nil
+					return Bool(left.After(right)), nil
 				case OpGte:
-					return Bool(!at.Before(bt)), nil
+					return Bool(!left.Before(right)), nil
 				}
-			} else if aok || bok {
+			} else if leftOK || rightOK {
 				// Either A or B are time.Time.
 				// Perform arithmatic add/sub operation and return a
 				// recalcuated time.Time value.
 				var x time.Time
 				var y int64
-				if aok {
-					x = at
+				if leftOK {
+					x = left
 					y = info.Right.Int64()
 				} else {
-					x = bt
+					x = right
 					y = info.Left.Int64()
 				}
 				switch info.Op {
@@ -960,29 +985,29 @@ func TestReadme(t *testing.T) {
 		},
 	)
 
-	// Set up the options
-	opts := Context{UserData: umap, Extender: ext}
+	// Set up a custom context that holds user data and the extender.
+	ctx := Context{UserData: dict, Extender: ext}
 
 	var res Value
 
 	// Return the timestamp.
-	res, _ = Eval(`timestamp`, &opts)
+	res, _ = Eval(`timestamp`, &ctx)
 	fmt.Println(res)
 
 	// Subtract an hour from the timestamp.
-	res, _ = Eval(`timestamp - $1h`, &opts)
+	res, _ = Eval(`timestamp - dur('1h')`, &ctx)
 	fmt.Println(res)
 
 	// Add one day to the current time.
-	res, _ = Eval(`now + $24h`, &opts)
+	res, _ = Eval(`now() + dur('24h')`, &ctx)
 	fmt.Println(res)
 
 	// See if timestamp is older than a day
-	res, _ = Eval(`timestamp < now - $24h ? "old" : "new"`, &opts)
+	res, _ = Eval(`timestamp < now() - dur('24h') ? "old" : "new"`, &ctx)
 	fmt.Println(res)
 
 	// Get the center of the bounding box as a concatenated string.
-	res, _ = Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &opts)
+	res, _ = Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &ctx)
 	fmt.Println(res)
 
 	// Output:

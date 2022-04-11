@@ -776,7 +776,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 					var info CallInfo
 					info.Chain = hasLeftLeft
 					info.Value = leftLeft
-					info.Name = left.strVal
+					info.Ident = left.strVal
 					info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx}
 					val, err = ctx.Extender.Call(info, ctx)
 					if err != nil {
@@ -1629,16 +1629,16 @@ type OpInfo struct {
 type CallInfo struct {
 	Chain bool
 	Value Value
-	Name  string
+	Ident string
 	Args  Args
 }
 
 type Extender interface {
-	// ref allows for custom evaluation of an expression.
+	// ref allows for custom evaluation of an property or variable.
 	Ref(info RefInfo, ctx *Context) (Value, error)
-	// Op allows for custom evaluation of an expression.
+	// Op allows for custom opererators on values.
 	Op(info OpInfo, ctx *Context) (Value, error)
-
+	// Call allows for function call for custom values.
 	Call(info CallInfo, ctx *Context) (Value, error)
 }
 
