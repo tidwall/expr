@@ -304,6 +304,13 @@ var testTable = []string{
 	(`howdy[9i8203]`), (`SyntaxError`),
 	(`howdy["did"]`), (`ReferenceError: fantastic`),
 	(`howdy.myfn1(9999)`), (`CallError: fantastic`),
+	(`((0i64)%0i64)`), (`NaN`),
+	(`((0i64)/0i64)`), (`NaN`),
+	(`((0u64)%0u64)`), (`NaN`),
+	(`((0u64)/0u64)`), (`NaN`),
+	(`64`), (`64`),
+	(`u64`), (`[Function u64]`),
+	(`i64`), (`[Function i64]`),
 }
 
 func simpleExtendorOptions(

@@ -265,8 +265,14 @@ func (a Value) div(b Value, pos int, ctx *Context) (Value, error) {
 		case floatKind:
 			return Value{kind: floatKind, floatVal: a.floatVal / b.floatVal}, nil
 		case intKind:
+			if b.intVal == 0 {
+				return Value{kind: floatKind, floatVal: math.NaN()}, nil
+			}
 			return Value{kind: intKind, intVal: a.intVal / b.intVal}, nil
 		case uintKind:
+			if b.uintVal == 0 {
+				return Value{kind: floatKind, floatVal: math.NaN()}, nil
+			}
 			return Value{kind: uintKind, uintVal: a.uintVal / b.uintVal}, nil
 		}
 	}
@@ -282,8 +288,14 @@ func (a Value) mod(b Value, pos int, ctx *Context) (Value, error) {
 		case floatKind:
 			return Value{kind: floatKind, floatVal: math.Mod(a.floatVal, b.floatVal)}, nil
 		case intKind:
+			if b.intVal == 0 {
+				return Value{kind: floatKind, floatVal: math.NaN()}, nil
+			}
 			return Value{kind: intKind, intVal: a.intVal % b.intVal}, nil
 		case uintKind:
+			if b.uintVal == 0 {
+				return Value{kind: floatKind, floatVal: math.NaN()}, nil
+			}
 			return Value{kind: uintKind, uintVal: a.uintVal % b.uintVal}, nil
 		}
 	}
@@ -630,7 +642,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 		}
 		fallthrough
 	case '-', '.', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		if strings.HasSuffix(expr, "64") {
+		if len(expr) > 3 && strings.HasSuffix(expr, "64") {
 			if expr[len(expr)-3] == 'u' {
 				x, err := strconv.ParseUint(expr[:len(expr)-3], 10, 64)
 				if err != nil {
