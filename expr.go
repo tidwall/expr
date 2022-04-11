@@ -18,9 +18,17 @@ func errSyntax(pos int) error {
 	return &errEval{pos: pos, err: errors.New("SyntaxError")}
 }
 
-func errUndefined(expr string, pos int) error {
+func errUndefined(expr string, pos int, chain bool) error {
+	var err error
+	if chain {
+		err = fmt.Errorf("Uncaught TypeError: "+
+			"Cannot read properties of undefined (reading '%s')", expr)
+	} else {
+		err = fmt.Errorf("ReferenceError: %s is not defined", expr)
+	}
 	return &errEval{
-		pos: pos, err: fmt.Errorf("ReferenceError: %s is not defined", expr),
+		pos:  pos,
+		err:  err,
 		udef: true,
 	}
 }
@@ -37,7 +45,7 @@ func errReference(err error, pos int) error {
 	}
 }
 
-var ErrUndefined = errors.New("undefined")
+// var ErrUndefined = errors.New("undefined")
 var ErrStop = errors.New("stop")
 
 type int64er interface{ Int64() int64 }
@@ -186,9 +194,7 @@ func doOp(op Op, a, b Value, pos int, ctx *Context) (Value, error) {
 		if err == nil {
 			return v, nil
 		}
-		if err != ErrUndefined {
-			return Undefined, errOperator(err, pos)
-		}
+		return Undefined, errOperator(err, pos)
 	}
 	return Undefined, errOperator(errors.New("undefined"), pos)
 }
@@ -672,13 +678,13 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 	case '(', '{', '[':
 		g, err := readGroup(expr, pos)
 		if err != nil {
-			return Undefined, errSyntax(pos)
+			return Undefined, err
 		}
 		if g[0] == '(' {
 			// paren groups can be evaluated and used as the leading value.
 			left, err = evalExpr(g[1:len(g)-1], pos+1, steps, nil, ctx)
 			if err != nil {
-				return Undefined, errSyntax(pos)
+				return Undefined, err
 			}
 			leftReady = true
 			expr = expr[len(g):]
@@ -715,7 +721,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			left = Null
 		default:
 			var err error
-			left, err = getRefValue(false, Undefined, ident, pos, ctx)
+			left, err = getRefValue(false, Undefined, ident, pos, false, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -730,7 +736,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 	var hasLeftLeft bool
 
 	// read each chained component
-	optionalChaining := false
+	optChain := false
 	for {
 		// There are more components to read
 		expr, pos = trim(expr, pos)
@@ -745,7 +751,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			}
 			expr = expr[1:]
 			pos++
-			optionalChaining = true
+			optChain = true
 			fallthrough
 		case '.':
 			// Member Access
@@ -756,19 +762,9 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			if !ok {
 				return Undefined, errSyntax(pos)
 			}
-			val, err := getRefValue(true, left, ident, pos, ctx)
+			val, err := getRefValue(true, left, ident, pos, optChain, ctx)
 			if err != nil {
-				var skipErr bool
-				if optionalChaining {
-					if err, ok := err.(*errEval); ok {
-						if err.udef {
-							skipErr = true
-						}
-					}
-				}
-				if !skipErr {
-					return Undefined, err
-				}
+				return Undefined, err
 			}
 			leftLeft = left
 			hasLeftLeft = true
@@ -779,7 +775,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 		case '(', '[':
 			g, err := readGroup(expr, pos)
 			if err != nil {
-				return Undefined, errSyntax(pos)
+				return Undefined, err
 			}
 			if g[0] == '(' {
 				// Function call
@@ -805,11 +801,18 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 				left = val
 			} else {
 				// Computed Member Access
-				return Undefined, errors.New("computed member access not allowed")
-				// val, err := evalExpr(raw[1:len(raw)-1], pos+1, steps, nil, ctx)
-				// if err != nil {
-				// 	return Undefined, errSyntax(pos)
-				// }
+				last, err := Eval(g[1:len(g)-1], ctx)
+				if err != nil {
+					return Undefined, err
+				}
+				ident := last.String()
+				val, err := getRefValue(true, left, ident, pos, optChain, ctx)
+				if err != nil {
+					return Undefined, err
+				}
+				leftLeft = left
+				hasLeftLeft = true
+				left = val
 			}
 			expr = expr[len(g):]
 			pos += len(g)
@@ -854,20 +857,37 @@ func (args *Args) ForEachValue(iter func(value Value) error) error {
 	return err
 }
 
-func getRefValue(chain bool, left Value, ident string, pos int, ctx *Context,
+func getRefValue(chain bool, left Value, ident string, pos int, optChain bool,
+	ctx *Context,
 ) (Value, error) {
-	if ctx == nil || ctx.Extender == nil {
-		return Undefined, errUndefined(ident, pos)
-	}
-	info := RefInfo{Chain: chain, Value: left, Ident: ident}
-	res, err := ctx.Extender.Ref(info, ctx)
-	if err != nil {
-		if err == ErrUndefined {
-			return Undefined, errUndefined(ident, pos)
+	val, err := func() (Value, error) {
+		if ctx == nil || ctx.Extender == nil {
+			return Undefined, errUndefined(ident, pos, chain)
 		}
-		return Undefined, errReference(err, pos)
+		info := RefInfo{Chain: chain, Value: left, Ident: ident}
+		val, err := ctx.Extender.Ref(info, ctx)
+		if err != nil {
+			return Undefined, errReference(err, pos)
+		}
+		if val == Undefined && left == Undefined {
+			return Undefined, errUndefined(ident, pos, chain)
+		}
+		return val, nil
+	}()
+	if err != nil {
+		var skipErr bool
+		if optChain {
+			if err, ok := err.(*errEval); ok {
+				if err.udef {
+					skipErr = true
+				}
+			}
+		}
+		if !skipErr {
+			return Undefined, err
+		}
 	}
-	return res, nil
+	return val, nil
 }
 
 func readIDStart(expr string) (int, bool) {
@@ -1651,17 +1671,17 @@ func NewExtender(
 	if ref == nil {
 		ref = func(info RefInfo, ctx *Context,
 		) (Value, error) {
-			return Undefined, ErrUndefined
+			return Undefined, nil
 		}
 	}
 	if call == nil {
 		call = func(info CallInfo, ctx *Context) (Value, error) {
-			return Undefined, ErrUndefined
+			return Undefined, nil
 		}
 	}
 	if op == nil {
 		op = func(info OpInfo, ctx *Context) (Value, error) {
-			return Undefined, ErrUndefined
+			return Undefined, nil
 		}
 	}
 	return &simpleExtender{ref, call, op}

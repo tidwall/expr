@@ -15,8 +15,6 @@ import (
 )
 
 var testTable = []string{
-	// (`"hello1"  .  world . hello . fellow`), (`asdf`),
-	// (`"hello"`), (`hello`),
 	(`.1`), (`0.1`),
 	(`.1e-1`), (`0.01`),
 	(`.1e-1 + 5`), (`5.01`),
@@ -187,7 +185,7 @@ var testTable = []string{
 	(`100 + blank_err`), (`ReferenceError: blank_err is not defined`),
 	(`100 + custom_err`), (`ReferenceError: hiya`),
 	(`"a \u\"567"`), (`SyntaxError`),
-	(`(hello) + (jello`), (`SyntaxError`),
+	(`(hello) + (jello`), (`ReferenceError: hello is not defined`),
 	(`(1) + (jello`), (`SyntaxError`),
 	(`(1) && `), (`SyntaxError`),
 	(` && (1)`), (`SyntaxError`),
@@ -222,7 +220,7 @@ var testTable = []string{
 	(`cust(10) || cust(3)`), (`true`),
 	(`cust(10) || cust(3)`), (`true`),
 	(`-cust(999)`), (`OperatorError: not this time`), // special error
-	(`cust(-90909090) + cust(-90909090)`), (`OperatorError: undefined`),
+	(`cust(-90909090) + cust(-90909090)`), (`undefined`),
 	(`cust(-80808080) + cust(-80808080)`), (`OperatorError: bad news`),
 	(`0x1`), (`1`),
 	(`0xZ`), (`SyntaxError`),
@@ -266,7 +264,6 @@ var testTable = []string{
 	(`true??1+1`), (`true`),
 	(`(false??1)+1`), (`1`),
 	(`(true??1)+1`), (`2`),
-	(`(undefined_noerr??undefined_noerr)+1`), (`NaN`),
 	(`(cust(1)??cust(2))+1`), (`2`),
 	("`hello world`"), ("hello world"),
 	("`hello \"\" world`"), (`hello "" world`),
@@ -297,12 +294,13 @@ var testTable = []string{
 	(`0.123123i64`), (`SyntaxError`),
 	(`new`), (`SyntaxError`),
 	(`howdy.myfn1().myfn2("1",2,"3") == 6`), (`true`),
-	(`howdy.myfn1.there`), (`ReferenceError: there is not defined`),
-	(`howdy.myfn1?.there`), (`undefined`),
+	(`howdy.myfn1.there`), (`undefined`),
+	(`howdy.myfn3.there`), (`Uncaught TypeError: Cannot read properties of undefined (reading 'there')`),
+	(`howdy.myfn3?.there`), (`undefined`),
 	(`howdy.myfn1#e`), (`SyntaxError`),
 	(`howdy.myfn1.#e`), (`SyntaxError`),
 	(`#howdy.myfn1.#e`), (`SyntaxError`),
-	(`howdy["do"]`), (`computed member access not allowed`),
+	(`howdy["do"]`), (`undefined`),
 }
 
 func simpleExtendorOptions(
@@ -325,10 +323,6 @@ func TestEvalTable(t *testing.T) {
 				switch info.Ident {
 				case "i64", "u64", "cust":
 					return Function(info.Ident), nil
-				case "undefined_noerr":
-					return Undefined, nil
-				case "blank_err":
-					return Undefined, ErrUndefined
 				case "custom_err":
 					return Undefined, errors.New("hiya")
 				case "howdy":
@@ -342,7 +336,7 @@ func TestEvalTable(t *testing.T) {
 					return Function(info.Ident), nil
 				}
 			}
-			return Undefined, ErrUndefined
+			return Undefined, nil
 		},
 		func(info CallInfo, ctx *Context) (Value, error) {
 			args, err := info.Args.Compute()
@@ -371,7 +365,7 @@ func TestEvalTable(t *testing.T) {
 				}
 				return Float64(sum), nil
 			}
-			return Undefined, ErrUndefined
+			return Undefined, nil
 		},
 		func(info OpInfo, ctx *Context) (Value, error) {
 			a := info.Left
@@ -379,7 +373,7 @@ func TestEvalTable(t *testing.T) {
 			op := info.Op
 			if a.Number() == -90909090 || b.Number() == -90909090 {
 				// special condition
-				return Undefined, ErrUndefined
+				return Undefined, nil
 			}
 			if a.Number() == -80808080 || b.Number() == -80808080 {
 				// special condition
@@ -421,7 +415,7 @@ func TestEvalTable(t *testing.T) {
 				}
 				return a, nil
 			default:
-				return Undefined, ErrUndefined
+				return Undefined, nil
 			}
 		},
 	)
@@ -586,7 +580,7 @@ func TestEvalTable(t *testing.T) {
 		},
 		nil,
 		func(info OpInfo, ctx *Context) (Value, error) {
-			return Undefined, ErrUndefined
+			return Undefined, nil
 		},
 	)
 	_, err = Eval("u64(1) + 1", &sops)
@@ -619,7 +613,7 @@ func TestEvalTable(t *testing.T) {
 		func(info RefInfo, ctx *Context) (Value, error) {
 			return Object(thing(999)), nil
 		}, nil, nil)
-	if eval("abc + 1", &sops).String() != "OperatorError: undefined" {
+	if eval("abc + 1", &sops).String() != "undefined" {
 		t.Fatal()
 	}
 }
@@ -698,21 +692,16 @@ func TestEvalAtom(t *testing.T) {
 	if _, err = evalAtom("true[", 0, 0, nil); err == nil {
 		t.Fatal()
 	}
-
 	ref := func(info RefInfo, ctx *Context) (Value, error) {
 		if info.Ident == "myfn" {
 			return Function(info.Ident), nil
 		}
-		return Undefined, ErrUndefined
+		return Undefined, nil
 	}
-
 	sopts := simpleExtendorOptions(nil, ref, nil, nil)
-
-	if _, err = evalAtom("myfn()", 0, 0, &sopts); err == nil {
+	if _, err = evalAtom("myfn()", 0, 0, &sopts); err != nil {
 		t.Fatal()
 	}
-
-	// fmt.Printf("%v %v\n", val, err)
 }
 
 func TestEvalForEach(t *testing.T) {
@@ -882,7 +871,7 @@ func TestReadme(t *testing.T) {
 				// Not a time.Duration, check the umap for the data
 				umap, ok := ctx.UserData.(map[string]Value)
 				if !ok {
-					return Undefined, ErrUndefined
+					return Undefined, nil
 				}
 				return umap[info.Ident], nil
 			}
@@ -925,7 +914,7 @@ func TestReadme(t *testing.T) {
 					return Object(x.Add(-time.Duration(y))), nil
 				}
 			}
-			return Undefined, ErrUndefined
+			return Undefined, nil
 		},
 	)
 
