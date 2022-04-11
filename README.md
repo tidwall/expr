@@ -6,10 +6,12 @@ Expression evaluator for Go
 
 ## Features
 
-- Operators: `+` `-` `*` `/` `%` `!` `<` `<=` `==` `!=` `>` `>=` `?:` `??` `,`
-- Types: String, Number, Boolean, and Custom types
+- Operators: `+` `-` `*` `/` `%` `!` `<` `<=` `==` `!=` `>` `>=` `?:` `??` `,` `[]`
+- Types: String, Number, Boolean, and custom types
+- Supports custom functions
 - Parenthesized expressions
-- Javascript-like syntax and automatic type conversions
+- Javascript-like syntax with automatic type conversions
+- Native uint64 and int64 types using the `u64` and `i64` suffix on number literals
 
 ## Using
 
