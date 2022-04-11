@@ -518,12 +518,6 @@ func TestEvalTable(t *testing.T) {
 	if Object(1).Value() != 1 {
 		t.Fatal()
 	}
-	if !Object(1).IsObject() {
-		t.Fatal()
-	}
-	if Bool(true).IsObject() {
-		t.Fatal()
-	}
 	if (Value{}).Value() != nil {
 		t.Fatal()
 	}
@@ -846,6 +840,39 @@ func BenchmarkSimpleCompRef(b *testing.B) {
 func TestNoDoOp(t *testing.T) {
 	_, err := doOp("", Undefined, Undefined, 0, nil)
 	if err == nil {
+		t.Fatal()
+	}
+}
+
+func TestTypeOf(t *testing.T) {
+	if Number(0).TypeOf() != "number" {
+		t.Fatal()
+	}
+	if Bool(false).TypeOf() != "boolean" {
+		t.Fatal()
+	}
+	if Int64(0).TypeOf() != "number" {
+		t.Fatal()
+	}
+	if Uint64(0).TypeOf() != "number" {
+		t.Fatal()
+	}
+	if Float64(0).TypeOf() != "number" {
+		t.Fatal()
+	}
+	if String("").TypeOf() != "string" {
+		t.Fatal()
+	}
+	if Function("").TypeOf() != "function" {
+		t.Fatal()
+	}
+	if Undefined.TypeOf() != "undefined" {
+		t.Fatal()
+	}
+	if Null.TypeOf() != "object" {
+		t.Fatal()
+	}
+	if Object("hello").TypeOf() != "object" {
 		t.Fatal()
 	}
 }

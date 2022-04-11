@@ -150,14 +150,29 @@ func Int64(x int64) Value { return Value{kind: intKind, intVal: x} }
 func Uint64(x uint64) Value { return Value{kind: uintKind, uintVal: x} }
 
 // Object returns a custom user-defined object.
-func Object(v interface{}) Value { return Value{kind: objKind, objVal: v} }
+func Object(v interface{}) Value {
+	return Value{kind: objKind, objVal: v}
+}
+
+func (a Value) TypeOf() string {
+	switch a.kind {
+	case undefKind:
+		return "undefined"
+	case boolKind:
+		return "boolean"
+	case floatKind, intKind, uintKind:
+		return "number"
+	case strKind:
+		return "string"
+	case funcKind:
+		return "function"
+	default:
+		return "object"
+	}
+}
 
 // Function
 func Function(name string) Value { return Value{kind: funcKind, strVal: name} }
-
-func (a Value) IsObject() bool {
-	return a.kind == objKind
-}
 
 func doOp(op Op, a, b Value, pos int, ctx *Context) (Value, error) {
 	if ctx != nil && ctx.Extender != nil {
