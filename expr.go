@@ -86,16 +86,19 @@ var (
 type Op string
 
 const (
-	OpAdd  Op = "+"
-	OpSub  Op = "-"
-	OpMul  Op = "*"
-	OpDiv  Op = "/"
-	OpMod  Op = "%"
-	OpLt   Op = "<"
-	OpSeq  Op = "==="
-	OpAnd  Op = "&&"
-	OpOr   Op = "||"
-	OpCoal Op = "??"
+	OpAdd    Op = "+"
+	OpSub    Op = "-"
+	OpMul    Op = "*"
+	OpDiv    Op = "/"
+	OpMod    Op = "%"
+	OpLt     Op = "<"
+	OpStEq   Op = "==="
+	OpAnd    Op = "&&"
+	OpOr     Op = "||"
+	OpBitOr  Op = "|"
+	OpBitXor Op = "^"
+	OpBitAnd Op = "&"
+	OpCoal   Op = "??"
 )
 
 func (op Op) String() string {
@@ -214,6 +217,77 @@ func (a Value) isnum() bool {
 		return true
 	}
 	return false
+}
+
+func (a Value) bor(b Value, pos int, ctx *Context) (Value, error) {
+	if a.kind == objKind || b.kind == objKind {
+		return doOp(OpBitOr, a, b, pos, ctx)
+	}
+	if a.kind == b.kind {
+		switch a.kind {
+		case floatKind:
+			return Value{
+				kind:     floatKind,
+				floatVal: float64(int64(a.floatVal) | int64(b.floatVal)),
+			}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal | b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal | b.uintVal}, nil
+		}
+	}
+	a, b = a.tofval(), b.tofval()
+	return Value{
+		kind:     floatKind,
+		floatVal: float64(int64(a.floatVal) | int64(b.floatVal)),
+	}, nil
+}
+func (a Value) band(b Value, pos int, ctx *Context) (Value, error) {
+	if a.kind == objKind || b.kind == objKind {
+		return doOp(OpBitAnd, a, b, pos, ctx)
+	}
+	if a.kind == b.kind {
+		switch a.kind {
+		case floatKind:
+			return Value{
+				kind:     floatKind,
+				floatVal: float64(int64(a.floatVal) & int64(b.floatVal)),
+			}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal & b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal & b.uintVal}, nil
+		}
+	}
+	a, b = a.tofval(), b.tofval()
+	return Value{
+		kind:     floatKind,
+		floatVal: float64(int64(a.floatVal) & int64(b.floatVal)),
+	}, nil
+}
+func (a Value) xor(b Value, pos int, ctx *Context) (Value, error) {
+	if a.kind == objKind || b.kind == objKind {
+		return doOp(OpBitXor, a, b, pos, ctx)
+	}
+	if a.kind == b.kind {
+		switch a.kind {
+		case floatKind:
+			return Value{
+				kind:     floatKind,
+				floatVal: float64(int64(a.floatVal) ^ int64(b.floatVal)),
+			}, nil
+		case intKind:
+			return Value{kind: intKind, intVal: a.intVal ^ b.intVal}, nil
+		case uintKind:
+			return Value{kind: uintKind, uintVal: a.uintVal ^ b.uintVal}, nil
+		}
+	}
+	a, b = a.tofval(), b.tofval()
+	return Value{
+		kind:     floatKind,
+		floatVal: float64(int64(a.floatVal) ^ int64(b.floatVal)),
+	}, nil
+
 }
 
 func (a Value) sub(b Value, pos int, ctx *Context) (Value, error) {
@@ -1358,13 +1432,142 @@ func evalEquality(expr string, pos, steps int, ctx *Context) (Value, error) {
 	return equal(left, op, expr[s:], pos+s, steps, ctx)
 }
 
-func logicalAnd(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func bitwiseXOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepLogicalAnd<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepBitwiseXOR<<1, expr, pos, steps, nil, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	switch op {
+	case '^':
+		return left.xor(right, pos, ctx)
+	default:
+		return right, nil
+	}
+}
+
+func evalBitwiseXOR(expr string, pos, steps int, ctx *Context) (Value, error) {
+	var err error
+	var s int
+	var left Value
+	var op byte
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '^':
+			left, err = bitwiseXOR(left, op, expr[s:i], pos+s, steps, ctx)
+			if err != nil {
+				return Undefined, err
+			}
+			op = expr[i]
+			s = i + 1
+		case '(', '[', '{', '"', '\'', '`':
+			g, err := readGroup(expr[i:], pos+i)
+			if err != nil {
+				return Undefined, err
+			}
+			i = i + len(g) - 1
+		}
+	}
+	return bitwiseXOR(left, op, expr[s:], pos+s, steps, ctx)
+}
+
+func bitwiseOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
+) (Value, error) {
+	expr, pos = trim(expr, pos)
+	if len(expr) == 0 {
+		return Undefined, errSyntax(pos)
+	}
+	right, err := evalAuto(stepBitwiseOR<<1, expr, pos, steps, nil, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	switch op {
+	case '|':
+		return left.bor(right, pos, ctx)
+	default:
+		return right, nil
+	}
+}
+
+func evalBitwiseOR(expr string, pos, steps int, ctx *Context) (Value, error) {
+	var err error
+	var s int
+	var left Value
+	var op byte
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '|':
+			left, err = bitwiseOR(left, op, expr[s:i], pos+s, steps, ctx)
+			if err != nil {
+				return Undefined, err
+			}
+			op = expr[i]
+			s = i + 1
+		case '(', '[', '{', '"', '\'', '`':
+			g, err := readGroup(expr[i:], pos+i)
+			if err != nil {
+				return Undefined, err
+			}
+			i = i + len(g) - 1
+		}
+	}
+	return bitwiseOR(left, op, expr[s:], pos+s, steps, ctx)
+}
+
+func bitwiseAND(left Value, op byte, expr string, pos, steps int, ctx *Context,
+) (Value, error) {
+	expr, pos = trim(expr, pos)
+	if len(expr) == 0 {
+		return Undefined, errSyntax(pos)
+	}
+	right, err := evalAuto(stepBitwiseAND<<1, expr, pos, steps, nil, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	switch op {
+	case '&':
+		return left.band(right, pos, ctx)
+	default:
+		return right, nil
+	}
+}
+
+func evalBitwiseAND(expr string, pos, steps int, ctx *Context) (Value, error) {
+	var err error
+	var s int
+	var left Value
+	var op byte
+	for i := 0; i < len(expr); i++ {
+		switch expr[i] {
+		case '&':
+			left, err = bitwiseAND(left, op, expr[s:i], pos+s, steps, ctx)
+			if err != nil {
+				return Undefined, err
+			}
+			op = expr[i]
+			s = i + 1
+		case '(', '[', '{', '"', '\'', '`':
+			g, err := readGroup(expr[i:], pos+i)
+			if err != nil {
+				return Undefined, err
+			}
+			i = i + len(g) - 1
+		}
+	}
+	return bitwiseAND(left, op, expr[s:], pos+s, steps, ctx)
+}
+
+func logicalAND(left Value, op byte, expr string, pos, steps int, ctx *Context,
+) (Value, error) {
+	expr, pos = trim(expr, pos)
+	if len(expr) == 0 {
+		return Undefined, errSyntax(pos)
+	}
+	right, err := evalAuto(stepLogicalAND<<1, expr, pos, steps, nil, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1376,7 +1579,7 @@ func logicalAnd(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalLogicalAnd(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalLogicalAND(expr string, pos, steps int, ctx *Context) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1384,10 +1587,15 @@ func evalLogicalAnd(expr string, pos, steps int, ctx *Context) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '&':
-			if i == len(expr)-1 || expr[i+1] != expr[i] {
+			if i+1 == len(expr) {
 				return Undefined, errSyntax(pos + i)
 			}
-			left, err = logicalAnd(left, op, expr[s:i], pos+s, steps, ctx)
+			if expr[i+1] != '&' {
+				// bitwise AND
+				i++
+				continue
+			}
+			left, err = logicalAND(left, op, expr[s:i], pos+s, steps, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1402,16 +1610,16 @@ func evalLogicalAnd(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return logicalAnd(left, op, expr[s:], pos+s, steps, ctx)
+	return logicalAND(left, op, expr[s:], pos+s, steps, ctx)
 }
 
-func logicalOr(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func logicalOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepLogicalOr<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepLogicalOR<<1, expr, pos, steps, nil, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1425,7 +1633,7 @@ func logicalOr(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalLogicalOr(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalLogicalOR(expr string, pos, steps int, ctx *Context) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1440,10 +1648,15 @@ func evalLogicalOr(expr string, pos, steps int, ctx *Context) (Value, error) {
 			}
 			fallthrough
 		case '|':
-			if i == len(expr)-1 || expr[i+1] != expr[i] {
+			if i+1 == len(expr) {
 				return Undefined, errSyntax(pos + i)
 			}
-			left, err = logicalOr(left, op, expr[s:i], pos+s, steps, ctx)
+			if expr[i+1] != expr[i] {
+				// bitwise OR
+				i++
+				continue
+			}
+			left, err = logicalOR(left, op, expr[s:i], pos+s, steps, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1458,7 +1671,7 @@ func evalLogicalOr(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return logicalOr(left, op, expr[s:], pos+s, steps, ctx)
+	return logicalOR(left, op, expr[s:], pos+s, steps, ctx)
 }
 
 func evalTerns(expr string, pos, steps int, ctx *Context) (Value, error) {
@@ -1564,14 +1777,29 @@ func evalAuto(step int, expr string, pos, steps int,
 			return evalTerns(expr, pos, steps, ctx)
 		}
 		fallthrough
-	case stepLogicalOr:
-		if (steps & stepLogicalOr) == stepLogicalOr {
-			return evalLogicalOr(expr, pos, steps, ctx)
+	case stepLogicalOR:
+		if (steps & stepLogicalOR) == stepLogicalOR {
+			return evalLogicalOR(expr, pos, steps, ctx)
 		}
 		fallthrough
-	case stepLogicalAnd:
-		if (steps & stepLogicalAnd) == stepLogicalAnd {
-			return evalLogicalAnd(expr, pos, steps, ctx)
+	case stepLogicalAND:
+		if (steps & stepLogicalAND) == stepLogicalAND {
+			return evalLogicalAND(expr, pos, steps, ctx)
+		}
+		fallthrough
+	case stepBitwiseOR:
+		if (steps & stepBitwiseOR) == stepBitwiseOR {
+			return evalBitwiseOR(expr, pos, steps, ctx)
+		}
+		fallthrough
+	case stepBitwiseXOR:
+		if (steps & stepBitwiseXOR) == stepBitwiseXOR {
+			return evalBitwiseXOR(expr, pos, steps, ctx)
+		}
+		fallthrough
+	case stepBitwiseAND:
+		if (steps & stepBitwiseAND) == stepBitwiseAND {
+			return evalBitwiseAND(expr, pos, steps, ctx)
 		}
 		fallthrough
 	case stepEquality:
@@ -1690,8 +1918,11 @@ const (
 	_              = 1 << iota //
 	stepComma                  //  1: Comma / Sequence
 	stepTerns                  //  3: Conditional (ternary) operator
-	stepLogicalOr              //  4: Logical OR (||) Nullish coalescing operator (??)
-	stepLogicalAnd             //  5: Logical AND (&&)
+	stepLogicalOR              //  4: Logical OR (||) Nullish coalescing operator (??)
+	stepLogicalAND             //  5: Logical AND (&&)
+	stepBitwiseOR              //  6: Bitwise OR (|)
+	stepBitwiseXOR             //  7: Bitwise XOR (^)
+	stepBitwiseAND             //  8: Bitwise AND (&)
 	stepEquality               //  9: Equality (==) (!=)
 	stepComps                  // 10: Comparison (<) (<=) (>) (>=)
 	stepSums                   // 12: Summation (-) (+)
@@ -1699,20 +1930,21 @@ const (
 )
 
 var opSteps = [256]uint16{
-	',': stepComma,                 // ','
-	'?': stepTerns | stepLogicalOr, // '?:' '??'
-	':': stepTerns,                 // '?:'
-	'|': stepLogicalOr,             // '||'
-	'&': stepLogicalAnd,            // '&&'
-	'=': stepComps | stepEquality,  // '==' '<=' '>='
-	'!': stepEquality,              // '!' '!='
-	'<': stepComps,                 // '<' '<='
-	'>': stepComps,                 // '>' '>='
-	'+': stepSums,                  // '+'
-	'-': stepSums,                  // '-'
-	'*': stepFacts,                 // '*'
-	'/': stepFacts,                 // '/'
-	'%': stepFacts,                 // '%'
+	',': stepComma,                       // ','
+	'?': stepTerns | stepLogicalOR,       // '?:' '??'
+	':': stepTerns,                       // '?:'
+	'|': stepLogicalOR | stepBitwiseOR,   // '||' '|'
+	'&': stepLogicalAND | stepBitwiseAND, // '&&' '&'
+	'^': stepBitwiseXOR,                  // '^'
+	'=': stepComps | stepEquality,        // '==' '<=' '>='
+	'!': stepEquality,                    // '!' '!='
+	'<': stepComps,                       // '<' '<='
+	'>': stepComps,                       // '>' '>='
+	'+': stepSums,                        // '+'
+	'-': stepSums,                        // '-'
+	'*': stepFacts,                       // '*'
+	'/': stepFacts,                       // '/'
+	'%': stepFacts,                       // '%'
 }
 
 // Eval evaluates an expression and returns the Result.

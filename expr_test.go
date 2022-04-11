@@ -15,6 +15,7 @@ import (
 )
 
 var testTable = []string{
+	// (`BREAK`),
 	(`.1`), (`0.1`),
 	(`.1e-1`), (`0.01`),
 	(`.1e-1 + 5`), (`5.01`),
@@ -78,8 +79,43 @@ var testTable = []string{
 	("\"he\\\"\\b\\fllo\""), ("he\"\b\fllo"),
 	(`("hello\\\t\/\r\n\t\\\"world")`), ("hello\\\t/\r\n\t\\\"world"),
 	(`"hello`), ("SyntaxError"),
-	(`1 | 2`), ("SyntaxError"),
-	(`1 & 2`), ("SyntaxError"),
+	(`1 | 2`), ("3"),
+	(`1 & 2`), ("0"),
+	(`5 & 4`), ("4"),
+	(`5 ^ 4`), ("1"),
+	(`500 ^`), ("SyntaxError"),
+	(`500 &`), ("SyntaxError"),
+	(`500 |`), ("SyntaxError"),
+	(`500 ^ 700`), ("840"),
+	(`500u64 ^ 700u64`), ("840"),
+	(`500i64 ^ 700i64`), ("840"),
+	(`numobj(500) ^ numobj(700)`), ("840"),
+	(`'500' ^ '700'`), ("840"),
+	(`500 & 700`), ("180"),
+	(`500u64 & 700u64`), ("180"),
+	(`numobj(500) & numobj(700)`), ("180"),
+	(`500i64 & 700i64`), ("180"),
+	(`'500' & '700'`), ("180"),
+	(`500 | 700`), ("1020"),
+	(`500u64 | 700u64`), ("1020"),
+	(`500i64 | 700i64`), ("1020"),
+	(`numobj(500) | numobj(700)`), ("1020"),
+	(`'500' | '700'`), ("1020"),
+	(`500 | -700`), ("-524"),
+	(`-500 & -700`), ("-1020"),
+	(`500 ^ -700`), ("-848"),
+	(`(%$#) | 500 | (%$#)`), ("SyntaxError"),
+	(`(%$#) & -500 & (%$#)`), ("SyntaxError"),
+	(`(%$#) ^ 500 ^ (%$#)`), ("SyntaxError"),
+	(`(%$# | 500 | (%$#`), ("SyntaxError"),
+	(`(%$# & -500 & (%$#`), ("SyntaxError"),
+	(`(%$# ^ 500 ^ (%$#`), ("SyntaxError"),
+	(`(400) | (500) ^ (%$#) & (%$#`), ("SyntaxError"),
+	(`(%$#) & (-500 & (%$#`), ("SyntaxError"),
+	(`(%$#) ^ (500 ^ (%$#`), ("SyntaxError"),
+	(`numobj(-80808080) & numobj(-80808080)`), ("OperatorError: bad news"),
+	(`numobj(-80808080) | numobj(-80808080)`), ("OperatorError: bad news"),
+	(`numobj(-80808080) ^ numobj(-80808080)`), ("OperatorError: bad news"),
 	(`(1 && 2}`), ("SyntaxError"),
 	(`1 != 2`), ("true"),
 	(`1 ! 2`), ("SyntaxError"),
@@ -352,7 +388,7 @@ func TestEvalTable(t *testing.T) {
 		func(info RefInfo, _ *Context) (Value, error) {
 			if !info.Chain {
 				switch info.Ident {
-				case "i64", "u64", "cust":
+				case "i64", "u64", "cust", "numobj":
 					return Function(info.Ident), nil
 				case "custom_err":
 					return Undefined, errors.New("hiya")
@@ -406,6 +442,8 @@ func TestEvalTable(t *testing.T) {
 					sum += args.Get(i).Float64()
 				}
 				return Float64(sum), nil
+			case "numobj":
+				return Object(args.Get(0).Float64()), nil
 			}
 			return Undefined, nil
 		},
@@ -458,13 +496,23 @@ func TestEvalTable(t *testing.T) {
 					return b, nil
 				}
 				return a, nil
+			case OpBitAnd:
+				return Int64(a.Int64() & b.Int64()), nil
+			case OpBitOr:
+				return Int64(a.Int64() | b.Int64()), nil
+			case OpBitXor:
+				return Int64(a.Int64() ^ b.Int64()), nil
 			default:
 				return Undefined, nil
 			}
 		},
 	)
 	for i := 0; i < len(testTable)-1; i += 2 {
-		expr, expect := testTable[i], testTable[i+1]
+		expr := testTable[i]
+		if expr == "BREAK" {
+			break
+		}
+		expect := testTable[i+1]
 		val, err := Eval(expr, &testOptions)
 		if err != nil {
 			val = String(err.Error())
@@ -654,6 +702,28 @@ func (t thing) String() string {
 func TestComputedArgs(t *testing.T) {
 	var cargs ComputedArgs
 	if cargs.Get(0) != Undefined {
+		t.Fatal()
+	}
+}
+
+func TestEvalBitwiseVarious(t *testing.T) {
+	// check that parital groups and missing left part returns errors
+	if _, err := evalBitwiseAND(` 100 & (100`, 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err := evalBitwiseXOR(` 100 ^ (100`, 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err := evalBitwiseOR(` 100 | (100`, 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err := evalBitwiseAND(`  & (100`, 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err := evalBitwiseXOR(`  ^ (100`, 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err := evalBitwiseOR(`  | (100`, 0, 0, nil); err == nil {
 		t.Fatal()
 	}
 }
