@@ -17,11 +17,14 @@ import (
 var testTable = []string{
 	// (`"hello1"  .  world . hello . fellow`), (`asdf`),
 	// (`"hello"`), (`hello`),
-	// (`i64(-9223372036854775808)`), (`-9223372036854775808`),
 	(`.1`), (`0.1`),
 	(`.1e-1`), (`0.01`),
 	(`.1e-1 + 5`), (`5.01`),
 	(`0.1`), (`0.1`),
+	(`1u64`), (`1`),
+	(`1.0u64`), (`SyntaxError`),
+	(`-1i64`), (`-1`),
+	(`-1.0u64`), (`SyntaxError`),
 	(``), (`undefined`),
 	(` `), (`undefined`),
 	(`()`), (`SyntaxError`),
@@ -108,9 +111,12 @@ var testTable = []string{
 	(`0 + [1]`), (`SyntaxError`),
 	(`hello + 2`), (`ReferenceError: hello is not defined`),
 	(`i64("-9223372036854775808")`), (`-9223372036854775808`),
+	(`-9223372036854775808i64`), (`-9223372036854775808`),
 	(`i64("9223372036854775807")`), (`9223372036854775807`),
+	(`9223372036854775807i64`), (`9223372036854775807`),
 	(`i64("-9223372036854775808")`), (`-9223372036854775808`),
 	(`u64("18446744073709551615") - u64("18446744073709551614")`), (`1`),
+	(`18446744073709551615u64 - 18446744073709551614u64`), (`1`),
 	(`u64("18446744073709551614") + u64("1")`), (`18446744073709551615`),
 	(`i64("-9223372036854775808") + i64("1")`), (`-9223372036854775807`),
 	(`i64("9223372036854775807") - i64("1")`), (`9223372036854775806`),
@@ -287,6 +293,16 @@ var testTable = []string{
 	(`1 != 2 > 1 != 1`), ("true"),
 	(`1 != 2 < 1 != 1`), ("false"),
 	(`1 != 1 < 2 != 1`), ("true"),
+	(`u64+"hello"`), ("[Function u64]hello"),
+	(`0.123123i64`), (`SyntaxError`),
+	(`new`), (`SyntaxError`),
+	(`howdy.myfn1().myfn2("1",2,"3") == 6`), (`true`),
+	(`howdy.myfn1.there`), (`ReferenceError: there is not defined`),
+	(`howdy.myfn1?.there`), (`undefined`),
+	(`howdy.myfn1#e`), (`SyntaxError`),
+	(`howdy.myfn1.#e`), (`SyntaxError`),
+	(`#howdy.myfn1.#e`), (`SyntaxError`),
+	(`howdy["do"]`), (`computed member access not allowed`),
 }
 
 func simpleExtendorOptions(
@@ -315,40 +331,18 @@ func TestEvalTable(t *testing.T) {
 					return Undefined, ErrUndefined
 				case "custom_err":
 					return Undefined, errors.New("hiya")
+				case "howdy":
+					return String("hiya"), nil
+				}
+			} else {
+				switch info.Ident {
+				case "myfn1":
+					return Function(info.Ident), nil
+				case "myfn2":
+					return Function(info.Ident), nil
 				}
 			}
 			return Undefined, ErrUndefined
-			// if strings.HasPrefix(ident, "i64(") && ident[len(ident)-1] == ')' {
-			// 	x, err := strconv.ParseInt(ident[4:len(ident)-1], 10, 64)
-			// 	if err != nil {
-			// 		return Undefined, err
-			// 	}
-			// 	return Int64(x), nil
-			// }
-			// if strings.HasPrefix(ident, "u64(") && ident[len(ident)-1] == ')' {
-			// 	x, err := strconv.ParseUint(ident[4:len(ident)-1], 10, 64)
-			// 	if err != nil {
-			// 		return Undefined, err
-			// 	}
-			// 	return Uint64(x), nil
-			// }
-			// if ident == "undefined_noerr" {
-			// 	return Undefined, nil
-			// }
-			// if ident == "blank_err" {
-			// 	return Undefined, ErrUndefined
-			// }
-			// if ident == "custom_err" {
-			// 	return Undefined, errors.New("hiya")
-			// }
-			// if strings.HasPrefix(ident, "cust(") && ident[len(ident)-1] == ')' {
-			// 	x, err := strconv.ParseInt(ident[5:len(ident)-1], 10, 64)
-			// 	if err != nil {
-			// 		return Undefined, err
-			// 	}
-			// 	return Object(x), nil
-			// }
-			// return Undefined, ErrUndefined
 		},
 		func(info CallInfo, ctx *Context) (Value, error) {
 			args, err := info.Args.Compute()
@@ -368,6 +362,14 @@ func TestEvalTable(t *testing.T) {
 					return Undefined, err
 				}
 				return Object(x), nil
+			case "myfn1":
+				return info.Value, nil
+			case "myfn2":
+				var sum float64
+				for i := 0; i < args.Len(); i++ {
+					sum += args.Get(i).Float64()
+				}
+				return Float64(sum), nil
 			}
 			return Undefined, ErrUndefined
 		},
@@ -632,6 +634,13 @@ func (t thing) String() string {
 	return strconv.FormatFloat(float64(t), 'f', -1, 64)
 }
 
+func TestComputedArgs(t *testing.T) {
+	var cargs ComputedArgs
+	if cargs.Get(0) != Undefined {
+		t.Fatal()
+	}
+}
+
 func FuzzExpr(f *testing.F) {
 	// test for panics
 	for i := 0; i < len(testTable)-1; i += 2 {
@@ -655,6 +664,55 @@ func testParseString(t *testing.T, data, expect string, expectOK bool) {
 	if ok != expectOK || got != expect {
 		t.Fatalf("expected %t/'%s' got %t/'%s'", expectOK, expect, ok, got)
 	}
+}
+
+func TestIdent(t *testing.T) {
+	id, ok := readIdent("")
+	if id != "" || ok {
+		t.Fatal()
+	}
+}
+
+func TestEvalAtom(t *testing.T) {
+	// check various atom cases
+	val, err := evalAtom("true", 0, 0, nil)
+	if err != nil || !val.Bool() {
+		t.Fatal()
+	}
+
+	if _, err = evalAtom("hello", 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err = evalAtom("(true", 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err = evalAtom("true?#", 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err = evalAtom("true?#", 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err = evalAtom("true(", 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+	if _, err = evalAtom("true[", 0, 0, nil); err == nil {
+		t.Fatal()
+	}
+
+	ref := func(info RefInfo, ctx *Context) (Value, error) {
+		if info.Ident == "myfn" {
+			return Function(info.Ident), nil
+		}
+		return Undefined, ErrUndefined
+	}
+
+	sopts := simpleExtendorOptions(nil, ref, nil, nil)
+
+	if _, err = evalAtom("myfn()", 0, 0, &sopts); err == nil {
+		t.Fatal()
+	}
+
+	// fmt.Printf("%v %v\n", val, err)
 }
 
 func TestEvalForEach(t *testing.T) {

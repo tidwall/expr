@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -635,7 +636,23 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			return Float64(float64(x)), nil
 		}
 		fallthrough
-	case '.', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+	case '-', '.', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		if strings.HasSuffix(expr, "64") {
+			if expr[len(expr)-3] == 'u' {
+				x, err := strconv.ParseUint(expr[:len(expr)-3], 10, 64)
+				if err != nil {
+					return Undefined, errSyntax(pos)
+				}
+				return Uint64(x), nil
+			}
+			if expr[len(expr)-3] == 'i' {
+				x, err := strconv.ParseInt(expr[:len(expr)-3], 10, 64)
+				if err != nil {
+					return Undefined, errSyntax(pos)
+				}
+				return Int64(x), nil
+			}
+		}
 		x, err := strconv.ParseFloat(expr, 64)
 		if err != nil {
 			return Undefined, errSyntax(pos)
@@ -658,9 +675,6 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			return Undefined, errSyntax(pos)
 		}
 		if g[0] == '(' {
-			if g[len(g)-1] != ')' {
-				return Undefined, errSyntax(pos)
-			}
 			// paren groups can be evaluated and used as the leading value.
 			left, err = evalExpr(g[1:len(g)-1], pos+1, steps, nil, ctx)
 			if err != nil {
@@ -767,9 +781,6 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			if err != nil {
 				return Undefined, errSyntax(pos)
 			}
-			if g[len(g)-1] != closech(g[0]) {
-				return Undefined, errSyntax(pos)
-			}
 			if g[0] == '(' {
 				// Function call
 				if left.kind != funcKind {
@@ -777,17 +788,17 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 						fmt.Errorf("Uncaught TypeError: %s is not a function",
 							leftIdent)
 				}
-				var info CallInfo
-				info.Chain = hasLeftLeft
-				info.Value = leftLeft
-				info.Name = left.strVal
-				info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx}
-				if ctx == nil || ctx.Extender == nil {
-					return Undefined, errUndefined(left.strVal, pos)
-				}
-				val, err := ctx.Extender.Call(info, ctx)
-				if err != nil {
-					return Undefined, err
+				var val Value
+				if ctx != nil && ctx.Extender != nil {
+					var info CallInfo
+					info.Chain = hasLeftLeft
+					info.Value = leftLeft
+					info.Name = left.strVal
+					info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx}
+					val, err = ctx.Extender.Call(info, ctx)
+					if err != nil {
+						return Undefined, err
+					}
 				}
 				leftLeft = left
 				hasLeftLeft = true
@@ -814,13 +825,13 @@ type ComputedArgs struct {
 }
 
 func (args *ComputedArgs) Get(index int) Value {
-	if index < 0 || index > len(args.values) {
+	if index < 0 || index >= len(args.values) {
 		return Undefined
 	}
 	return args.values[index]
 }
 
-func (args *ComputedArgs) Count() int {
+func (args *ComputedArgs) Len() int {
 	return len(args.values)
 }
 
@@ -831,10 +842,10 @@ type Args struct {
 
 func (args *Args) Compute() (ComputedArgs, error) {
 	var values []Value
-	_, err := EvalForEach(args.expr, func(value Value) error {
+	err := args.ForEachValue(func(value Value) error {
 		values = append(values, value)
 		return nil
-	}, args.ctx)
+	})
 	return ComputedArgs{values}, err
 }
 
@@ -1172,6 +1183,13 @@ func evalSums(expr string, pos, steps int, ctx *Context) (Value, error) {
 				// scientific notation
 				continue
 			}
+			if neg {
+				if s > 0 && s < len(expr) && expr[s-1] == '-' &&
+					expr[s] >= '0' && expr[s] <= '9' {
+					s--
+					neg = false
+				}
+			}
 			left, err = sum(left, op, expr[s:i], neg, false, pos+s, steps, ctx)
 			if err != nil {
 				return Undefined, err
@@ -1191,6 +1209,13 @@ func evalSums(expr string, pos, steps int, ctx *Context) (Value, error) {
 			if !fill && !isspace(expr[i]) {
 				fill = true
 			}
+		}
+	}
+	if neg {
+		if s > 0 && s < len(expr) && expr[s-1] == '-' &&
+			expr[s] >= '0' && expr[s] <= '9' {
+			s--
+			neg = false
 		}
 	}
 	return sum(left, op, expr[s:], neg, true, pos+s, steps, ctx)
@@ -1629,8 +1654,13 @@ func NewExtender(
 			return Undefined, ErrUndefined
 		}
 	}
+	if call == nil {
+		call = func(info CallInfo, ctx *Context) (Value, error) {
+			return Undefined, ErrUndefined
+		}
+	}
 	if op == nil {
-		op = func(op OpInfo, ctx *Context) (Value, error) {
+		op = func(info OpInfo, ctx *Context) (Value, error) {
 			return Undefined, ErrUndefined
 		}
 	}
