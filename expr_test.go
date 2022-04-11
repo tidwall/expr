@@ -301,6 +301,9 @@ var testTable = []string{
 	(`howdy.myfn1.#e`), (`SyntaxError`),
 	(`#howdy.myfn1.#e`), (`SyntaxError`),
 	(`howdy["do"]`), (`undefined`),
+	(`howdy[9i8203]`), (`SyntaxError`),
+	(`howdy["did"]`), (`ReferenceError: fantastic`),
+	(`howdy.myfn1(9999)`), (`CallError: fantastic`),
 }
 
 func simpleExtendorOptions(
@@ -334,6 +337,8 @@ func TestEvalTable(t *testing.T) {
 					return Function(info.Ident), nil
 				case "myfn2":
 					return Function(info.Ident), nil
+				case "did":
+					return Undefined, errors.New("fantastic")
 				}
 			}
 			return Undefined, nil
@@ -357,6 +362,9 @@ func TestEvalTable(t *testing.T) {
 				}
 				return Object(x), nil
 			case "myfn1":
+				if args.Get(0).String() == "9999" {
+					return Undefined, errors.New("fantastic")
+				}
 				return info.Value, nil
 			case "myfn2":
 				var sum float64
@@ -571,7 +579,7 @@ func TestEvalTable(t *testing.T) {
 	if OpCoal.String() != "??" {
 		t.Fatal()
 	}
-	if Op(-1).String() != "" {
+	if Op("").String() != "" {
 		t.Fatal()
 	}
 	sops := simpleExtendorOptions(nil,
@@ -832,6 +840,13 @@ func BenchmarkSimpleCompRef(b *testing.B) {
 	)
 	for i := 0; i < b.N; i++ {
 		Eval("5 < ten", &opts)
+	}
+}
+
+func TestNoDoOp(t *testing.T) {
+	_, err := doOp("", Undefined, Undefined, 0, nil)
+	if err == nil {
+		t.Fatal()
 	}
 }
 

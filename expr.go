@@ -14,23 +14,15 @@ import (
 	"unicode/utf8"
 )
 
-func errSyntax(pos int) error {
-	return &errEval{pos: pos, err: errors.New("SyntaxError")}
-}
-
-func errUndefined(expr string, pos int, chain bool) error {
+func errUndefined(ident string, pos int, chain bool) error {
 	var err error
 	if chain {
 		err = fmt.Errorf("Uncaught TypeError: "+
-			"Cannot read properties of undefined (reading '%s')", expr)
+			"Cannot read properties of undefined (reading '%s')", ident)
 	} else {
-		err = fmt.Errorf("ReferenceError: %s is not defined", expr)
+		err = fmt.Errorf("ReferenceError: %s is not defined", ident)
 	}
-	return &errEval{
-		pos:  pos,
-		err:  err,
-		udef: true,
-	}
+	return &errEval{pos: pos, err: err, udef: true}
 }
 
 func errOperator(err error, pos int) error {
@@ -45,7 +37,19 @@ func errReference(err error, pos int) error {
 	}
 }
 
-// var ErrUndefined = errors.New("undefined")
+func errCall(err error, pos int) error {
+	return &errEval{
+		pos: pos, err: fmt.Errorf("CallError: %w", err),
+	}
+}
+
+func errSyntax(pos int) error {
+	return &errEval{
+		pos: pos, err: errors.New("SyntaxError"),
+	}
+}
+
+// ErrStop is used to stop the EvalForEach and ForEachValue
 var ErrStop = errors.New("stop")
 
 type int64er interface{ Int64() int64 }
@@ -79,59 +83,27 @@ var (
 )
 
 // Op is an operator for Custom values used for the Options.Op function.
-type Op int
+type Op string
 
 const (
-	_      Op = iota
-	OpAdd     // +
-	OpSub     // -
-	OpMul     // *
-	OpDiv     // /
-	OpMod     // %
-	OpLt      // <
-	OpLte     // <=
-	OpGt      // >
-	OpGte     // >=
-	OpEq      // ==
-	OpNeq     // !=
-	OpAnd     // &&
-	OpOr      // ||
-	OpCoal    // ??
+	OpAdd  Op = "+"
+	OpSub  Op = "-"
+	OpMul  Op = "*"
+	OpDiv  Op = "/"
+	OpMod  Op = "%"
+	OpLt   Op = "<"
+	OpLte  Op = "<="
+	OpGt   Op = ">"
+	OpGte  Op = ">="
+	OpEq   Op = "=="
+	OpNeq  Op = "!="
+	OpAnd  Op = "&&"
+	OpOr   Op = "||"
+	OpCoal Op = "??"
 )
 
 func (op Op) String() string {
-	switch op {
-	case OpAdd:
-		return "+"
-	case OpSub:
-		return "-"
-	case OpMul:
-		return "*"
-	case OpDiv:
-		return "/"
-	case OpMod:
-		return "%"
-	case OpLt:
-		return "<"
-	case OpLte:
-		return "<="
-	case OpGt:
-		return ">"
-	case OpGte:
-		return ">="
-	case OpEq:
-		return "=="
-	case OpNeq:
-		return "!="
-	case OpAnd:
-		return "&&"
-	case OpOr:
-		return "||"
-	case OpCoal:
-		return "??"
-	default:
-		return ""
-	}
+	return string(op)
 }
 
 type kind byte
@@ -196,7 +168,7 @@ func doOp(op Op, a, b Value, pos int, ctx *Context) (Value, error) {
 		}
 		return Undefined, errOperator(err, pos)
 	}
-	return Undefined, errOperator(errors.New("undefined"), pos)
+	return Undefined, errOperator(errors.New("undefined "), pos)
 }
 
 func (a Value) add(b Value, pos int, ctx *Context) (Value, error) {
@@ -793,7 +765,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 					info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx}
 					val, err = ctx.Extender.Call(info, ctx)
 					if err != nil {
-						return Undefined, err
+						return Undefined, errCall(err, pos)
 					}
 				}
 				leftLeft = left
@@ -801,7 +773,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 				left = val
 			} else {
 				// Computed Member Access
-				last, err := Eval(g[1:len(g)-1], ctx)
+				last, err := evalExpr(g[1:len(g)-1], 0, steps, nil, ctx)
 				if err != nil {
 					return Undefined, err
 				}
