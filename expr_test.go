@@ -319,6 +319,19 @@ var testTable = []string{
 	(`"1" !== "2"`), (`true`),
 	(`false !== true`), (`true`),
 	(`false !== ! true`), (`false`),
+	(`cust1 < cust2`), (`OperatorError: too bad 1`),
+	(`cust1 <= cust2`), (`OperatorError: too bad 1`),
+	(`cust1 == cust2`), (`OperatorError: too bad 1`),
+	(`cust1 > cust2`), (`OperatorError: too bad 2`),
+	(`cust1 >= cust2`), (`OperatorError: too bad 2`),
+	(`cust3 < cust2`), (`false`),
+	(`cust3 <= cust2`), (`OperatorError: too bad 2`),
+	(`cust2 > cust3`), (`false`),
+	(`cust2 >= cust3`), (`OperatorError: too bad 2`),
+	(`cust2 == cust3`), (`OperatorError: too bad 2`),
+	(`cust3 == cust2`), (`OperatorError: too bad 2`),
+	(`cust3 !== cust2`), (`OperatorError: too bad 2`),
+	(`cust3 != cust2`), (`OperatorError: too bad 2`),
 }
 
 func simpleExtendorOptions(
@@ -345,6 +358,12 @@ func TestEvalTable(t *testing.T) {
 					return Undefined, errors.New("hiya")
 				case "howdy":
 					return String("hiya"), nil
+				case "cust1":
+					return Object("cust1"), nil
+				case "cust2":
+					return Object("cust2"), nil
+				case "cust3":
+					return Object("cust3"), nil
 				}
 			} else {
 				switch info.Ident {
@@ -417,6 +436,18 @@ func TestEvalTable(t *testing.T) {
 			case OpMod:
 				return Number(math.Mod(a.Number(), b.Number())), nil
 			case OpLt:
+				if a.String() == "cust1" {
+					return Undefined, errors.New("too bad 1")
+				}
+				if a.String() == "cust2" {
+					return Undefined, errors.New("too bad 2")
+				}
+				if a.String() == "cust3" {
+					if b.String() == "cust2" {
+						return Bool(false), nil
+					}
+					return Undefined, errors.New("too bad 3")
+				}
 				return Bool(a.Number() < b.Number()), nil
 			case OpAnd:
 				return Bool(a.Bool() && b.Bool()), nil
