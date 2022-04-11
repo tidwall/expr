@@ -92,11 +92,7 @@ const (
 	OpDiv  Op = "/"
 	OpMod  Op = "%"
 	OpLt   Op = "<"
-	OpLte  Op = "<="
-	OpGt   Op = ">"
-	OpGte  Op = ">="
-	OpEq   Op = "=="
-	OpNeq  Op = "!="
+	OpSeq  Op = "==="
 	OpAnd  Op = "&&"
 	OpOr   Op = "||"
 	OpCoal Op = "??"
@@ -324,100 +320,75 @@ func (a Value) lt(b Value, pos int, ctx *Context) (Value, error) {
 }
 
 func (a Value) lte(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpLte, a, b, pos, ctx)
+	t, err := a.lt(b, pos, ctx)
+	if err != nil {
+		return Undefined, err
 	}
-	if a.kind == b.kind {
-		switch a.kind {
-		case floatKind:
-			return Value{kind: boolKind, boolVal: a.floatVal <= b.floatVal}, nil
-		case intKind:
-			return Value{kind: boolKind, boolVal: a.intVal <= b.intVal}, nil
-		case uintKind:
-			return Value{kind: boolKind, boolVal: a.uintVal <= b.uintVal}, nil
-		case strKind:
-			return Value{kind: boolKind, boolVal: a.strVal <= b.strVal}, nil
-		}
+	if t.Bool() {
+		return t, nil
 	}
-	a, b = a.tofval(), b.tofval()
-	return Value{kind: boolKind, boolVal: a.floatVal <= b.floatVal}, nil
+	t, err = b.lt(a, pos, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	return Bool(!t.Bool()), nil
 }
 
 func (a Value) gt(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpGt, a, b, pos, ctx)
-	}
-	if a.kind == b.kind {
-		switch a.kind {
-		case floatKind:
-			return Value{kind: boolKind, boolVal: a.floatVal > b.floatVal}, nil
-		case intKind:
-			return Value{kind: boolKind, boolVal: a.intVal > b.intVal}, nil
-		case uintKind:
-			return Value{kind: boolKind, boolVal: a.uintVal > b.uintVal}, nil
-		case strKind:
-			return Value{kind: boolKind, boolVal: a.strVal > b.strVal}, nil
-		}
-	}
-	a, b = a.tofval(), b.tofval()
-	return Value{kind: boolKind, boolVal: a.floatVal > b.floatVal}, nil
+	return b.lt(a, pos, ctx)
 }
+
 func (a Value) gte(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpGte, a, b, pos, ctx)
+	t, err := a.gt(b, pos, ctx)
+	if err != nil {
+		return Undefined, err
 	}
-	if a.kind == b.kind {
-		switch a.kind {
-		case floatKind:
-			return Value{kind: boolKind, boolVal: a.floatVal >= b.floatVal}, nil
-		case intKind:
-			return Value{kind: boolKind, boolVal: a.intVal >= b.intVal}, nil
-		case uintKind:
-			return Value{kind: boolKind, boolVal: a.uintVal >= b.uintVal}, nil
-		case strKind:
-			return Value{kind: boolKind, boolVal: a.strVal >= b.strVal}, nil
-		}
+	if t.Bool() {
+		return t, nil
 	}
-	a, b = a.tofval(), b.tofval()
-	return Value{kind: boolKind, boolVal: a.floatVal >= b.floatVal}, nil
+	t, err = b.gt(a, pos, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	return Bool(!t.Bool()), nil
 }
+
 func (a Value) eq(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpEq, a, b, pos, ctx)
+	t, err := a.lt(b, pos, ctx)
+	if err != nil {
+		return Undefined, err
 	}
-	if a.kind == b.kind {
-		switch a.kind {
-		case floatKind:
-			return Value{kind: boolKind, boolVal: a.floatVal == b.floatVal}, nil
-		case intKind:
-			return Value{kind: boolKind, boolVal: a.intVal == b.intVal}, nil
-		case uintKind:
-			return Value{kind: boolKind, boolVal: a.uintVal == b.uintVal}, nil
-		case strKind:
-			return Value{kind: boolKind, boolVal: a.strVal == b.strVal}, nil
-		}
+	if t.Bool() {
+		return Bool(false), nil
 	}
-	a, b = a.tofval(), b.tofval()
-	return Value{kind: boolKind, boolVal: a.floatVal == b.floatVal}, nil
+	t, err = b.lt(a, pos, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	return Bool(!t.Bool()), nil
 }
-func (a Value) neq(b Value, pos int, ctx *Context) (Value, error) {
-	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpNeq, a, b, pos, ctx)
-	}
+
+func (a Value) seq(b Value, pos int, ctx *Context) (Value, error) {
 	if a.kind == b.kind {
-		switch a.kind {
-		case floatKind:
-			return Value{kind: boolKind, boolVal: a.floatVal != b.floatVal}, nil
-		case intKind:
-			return Value{kind: boolKind, boolVal: a.intVal != b.intVal}, nil
-		case uintKind:
-			return Value{kind: boolKind, boolVal: a.uintVal != b.uintVal}, nil
-		case strKind:
-			return Value{kind: boolKind, boolVal: a.strVal != b.strVal}, nil
-		}
+		return a.eq(b, pos, ctx)
 	}
-	a, b = a.tofval(), b.tofval()
-	return Value{kind: boolKind, boolVal: a.floatVal != b.floatVal}, nil
+	return Value{kind: boolKind, boolVal: false}, nil
+}
+
+func (a Value) neq(b Value, pos int, ctx *Context) (Value, error) {
+	val, err := a.eq(b, pos, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	return Bool(!val.Bool()), nil
+}
+
+func (a Value) sneq(b Value, pos int, ctx *Context) (Value, error) {
+	val, err := a.seq(b, pos, ctx)
+	if err != nil {
+		return Undefined, err
+	}
+	return Bool(!val.Bool()), nil
 }
 
 func (a Value) and(b Value, pos int, ctx *Context) (Value, error) {
@@ -1330,6 +1301,10 @@ func equal(left Value, op byte, expr string, pos, steps int, ctx *Context,
 		return left.eq(right, pos, ctx)
 	case '!':
 		return left.neq(right, pos, ctx)
+	case '=' + 32:
+		return left.seq(right, pos, ctx)
+	case '!' + 32:
+		return left.sneq(right, pos, ctx)
 	default:
 		return right, nil
 	}
@@ -1358,6 +1333,11 @@ func evalEquality(expr string, pos, steps int, ctx *Context) (Value, error) {
 				if i == len(expr)-1 || expr[i+1] != '=' {
 					continue
 				}
+				opsz++
+			}
+			if i+2 < len(expr) && expr[i+2] == '=' {
+				// strict
+				opch += 32
 				opsz++
 			}
 			left, err = equal(left, op, expr[s:i], pos+s, steps, ctx)

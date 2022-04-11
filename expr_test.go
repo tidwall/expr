@@ -311,6 +311,14 @@ var testTable = []string{
 	(`64`), (`64`),
 	(`u64`), (`[Function u64]`),
 	(`i64`), (`[Function i64]`),
+	(`1 == "1"`), (`true`),
+	(`1 === "1"`), (`false`),
+	(`1 !== "1"`), (`true`),
+	(`"1" === "1"`), (`true`),
+	(`"1" === "2"`), (`false`),
+	(`"1" !== "2"`), (`true`),
+	(`false !== true`), (`true`),
+	(`false !== ! true`), (`false`),
 }
 
 func simpleExtendorOptions(
@@ -410,16 +418,6 @@ func TestEvalTable(t *testing.T) {
 				return Number(math.Mod(a.Number(), b.Number())), nil
 			case OpLt:
 				return Bool(a.Number() < b.Number()), nil
-			case OpLte:
-				return Bool(a.Number() <= b.Number()), nil
-			case OpGt:
-				return Bool(a.Number() > b.Number()), nil
-			case OpGte:
-				return Bool(a.Number() >= b.Number()), nil
-			case OpEq:
-				return Bool(a.Number() == b.Number()), nil
-			case OpNeq:
-				return Bool(a.Number() != b.Number()), nil
 			case OpAnd:
 				return Bool(a.Bool() && b.Bool()), nil
 			case OpOr:
@@ -554,21 +552,6 @@ func TestEvalTable(t *testing.T) {
 		t.Fatal()
 	}
 	if OpLt.String() != "<" {
-		t.Fatal()
-	}
-	if OpLte.String() != "<=" {
-		t.Fatal()
-	}
-	if OpGt.String() != ">" {
-		t.Fatal()
-	}
-	if OpGte.String() != ">=" {
-		t.Fatal()
-	}
-	if OpEq.String() != "==" {
-		t.Fatal()
-	}
-	if OpNeq.String() != "!=" {
 		t.Fatal()
 	}
 	if OpAnd.String() != "&&" {
@@ -961,12 +944,6 @@ func TestReadme(t *testing.T) {
 				switch info.Op {
 				case OpLt:
 					return Bool(left.Before(right)), nil
-				case OpLte:
-					return Bool(!right.After(left)), nil
-				case OpGt:
-					return Bool(left.After(right)), nil
-				case OpGte:
-					return Bool(!left.Before(right)), nil
 				}
 			} else if leftOK || rightOK {
 				// Either A or B are time.Time.
