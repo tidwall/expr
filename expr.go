@@ -1119,17 +1119,6 @@ func unescapeString(data string) string {
 	return string(str)
 }
 
-// // readRune reads a rune from preprocessed data.
-// func readRune(data []byte) (r rune, n int) {
-// 	if data[0] == '{' {
-// 		for i := 1; i < len(data); i++ {
-// 			if data[0] == '}' {
-
-// 			}
-// 		}
-// 	}
-// }
-
 func appendRune(dst []byte, r rune) []byte {
 	// provide enough space to encode the largest utf8 possible
 	dst = append(dst, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -1814,7 +1803,6 @@ func evalAuto(step int, expr string, ctx *evalContext) (Value, error) {
 }
 
 func evalExpr(expr string, ctx *evalContext) (Value, error) {
-	// terns >> logicals >> comps >> sums >> facts >> atoms
 	return evalAuto(stepComma, expr, ctx)
 }
 
@@ -1913,26 +1901,6 @@ const (
 	stepFacts                  // 13: Factors (*) (/)
 )
 
-// type stepEvalFunc func(expr string, steps int,
-// 	iter func(value Value) error, ctx *Context,
-// ) (Value, error)
-
-// // must match above
-// var stepAll = [...]stepEvalFunc{
-// 	nil,
-// 	evalComma,
-// 	evalTerns,
-// 	evalLogicalOR,
-// 	evalLogicalAND,
-// 	evalBitwiseOR,
-// 	evalBitwiseXOR,
-// 	evalBitwiseAND,
-// 	evalEquality,
-// 	evalComps,
-// 	evalSums,
-// 	evalFacts,
-// }
-
 // all step tokens
 var opSteps = [256]uint16{
 	',': stepComma,                       // ','
@@ -1951,12 +1919,6 @@ var opSteps = [256]uint16{
 	'/': stepFacts,                       // '/'
 	'%': stepFacts,                       // '%'
 }
-
-// var stepTable = func() []stepEvalFunc {
-// 	table := make([]stepEvalFunc, 32)
-// 	stepComma
-// 	return table
-// }()
 
 type evalContext struct {
 	expr  string                  // original expression
