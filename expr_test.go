@@ -368,6 +368,10 @@ var testTable = []string{
 	(`cust3 == cust2`), (`OperatorError: too bad 2`),
 	(`cust3 !== cust2`), (`OperatorError: too bad 2`),
 	(`cust3 != cust2`), (`OperatorError: too bad 2`),
+	(`true.hello == undefined`), (`true`),
+	(`true.hello == '11'`), (`false`),
+	(`true.hello == null`), (`false`),
+	(`null == null`), (`true`),
 }
 
 func simpleExtendorOptions(

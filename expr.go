@@ -424,6 +424,10 @@ func (a Value) gte(b Value, ctx *evalContext) (Value, error) {
 }
 
 func (a Value) eq(b Value, ctx *evalContext) (Value, error) {
+	if a.kind != b.kind && a.kind != objKind && b.kind != objKind {
+		a, b = a.tofval(), b.tofval()
+		return Bool(a == b), nil
+	}
 	t, err := a.lt(b, ctx)
 	if err != nil {
 		return Undefined, err
