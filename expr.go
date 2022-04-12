@@ -173,10 +173,10 @@ func (a Value) TypeOf() string {
 // Function
 func Function(name string) Value { return Value{kind: funcKind, strVal: name} }
 
-func doOp(op Op, a, b Value, pos int, ctx *Context) (Value, error) {
-	if ctx != nil && ctx.Extender != nil {
+func doOp(op Op, a, b Value, pos int, ctx *evalContext) (Value, error) {
+	if ctx.base != nil && ctx.base.Extender != nil {
 		info := OpInfo{Left: a, Op: op, Right: b}
-		v, err := ctx.Extender.Op(info, ctx)
+		v, err := ctx.base.Extender.Op(info, ctx.base)
 		if err == nil {
 			return v, nil
 		}
@@ -185,7 +185,7 @@ func doOp(op Op, a, b Value, pos int, ctx *Context) (Value, error) {
 	return Undefined, errOperator(errors.New("undefined "), pos)
 }
 
-func (a Value) add(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) add(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpAdd, a, b, pos, ctx)
 	}
@@ -219,7 +219,7 @@ func (a Value) isnum() bool {
 	return false
 }
 
-func (a Value) bor(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) bor(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitOr, a, b, pos, ctx)
 	}
@@ -242,7 +242,7 @@ func (a Value) bor(b Value, pos int, ctx *Context) (Value, error) {
 		floatVal: float64(int64(a.floatVal) | int64(b.floatVal)),
 	}, nil
 }
-func (a Value) band(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) band(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitAnd, a, b, pos, ctx)
 	}
@@ -265,7 +265,7 @@ func (a Value) band(b Value, pos int, ctx *Context) (Value, error) {
 		floatVal: float64(int64(a.floatVal) & int64(b.floatVal)),
 	}, nil
 }
-func (a Value) xor(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) xor(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitXor, a, b, pos, ctx)
 	}
@@ -290,7 +290,7 @@ func (a Value) xor(b Value, pos int, ctx *Context) (Value, error) {
 
 }
 
-func (a Value) sub(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) sub(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpSub, a, b, pos, ctx)
 	}
@@ -308,7 +308,7 @@ func (a Value) sub(b Value, pos int, ctx *Context) (Value, error) {
 	return Value{kind: floatKind, floatVal: a.floatVal - b.floatVal}, nil
 }
 
-func (a Value) mul(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) mul(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpMul, a, b, pos, ctx)
 	}
@@ -326,7 +326,7 @@ func (a Value) mul(b Value, pos int, ctx *Context) (Value, error) {
 	return Value{kind: floatKind, floatVal: a.floatVal * b.floatVal}, nil
 }
 
-func (a Value) div(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) div(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpDiv, a, b, pos, ctx)
 	}
@@ -349,7 +349,7 @@ func (a Value) div(b Value, pos int, ctx *Context) (Value, error) {
 	a, b = a.tofval(), b.tofval()
 	return Value{kind: floatKind, floatVal: a.floatVal / b.floatVal}, nil
 }
-func (a Value) mod(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) mod(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpMod, a, b, pos, ctx)
 	}
@@ -373,7 +373,7 @@ func (a Value) mod(b Value, pos int, ctx *Context) (Value, error) {
 	return Value{kind: floatKind, floatVal: math.Mod(a.floatVal, b.floatVal)}, nil
 }
 
-func (a Value) lt(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) lt(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpLt, a, b, pos, ctx)
 	}
@@ -393,7 +393,7 @@ func (a Value) lt(b Value, pos int, ctx *Context) (Value, error) {
 	return Value{kind: boolKind, boolVal: a.floatVal < b.floatVal}, nil
 }
 
-func (a Value) lte(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) lte(b Value, pos int, ctx *evalContext) (Value, error) {
 	t, err := a.lt(b, pos, ctx)
 	if err != nil {
 		return Undefined, err
@@ -408,11 +408,11 @@ func (a Value) lte(b Value, pos int, ctx *Context) (Value, error) {
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) gt(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) gt(b Value, pos int, ctx *evalContext) (Value, error) {
 	return b.lt(a, pos, ctx)
 }
 
-func (a Value) gte(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) gte(b Value, pos int, ctx *evalContext) (Value, error) {
 	t, err := a.gt(b, pos, ctx)
 	if err != nil {
 		return Undefined, err
@@ -427,7 +427,7 @@ func (a Value) gte(b Value, pos int, ctx *Context) (Value, error) {
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) eq(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) eq(b Value, pos int, ctx *evalContext) (Value, error) {
 	t, err := a.lt(b, pos, ctx)
 	if err != nil {
 		return Undefined, err
@@ -442,14 +442,14 @@ func (a Value) eq(b Value, pos int, ctx *Context) (Value, error) {
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) seq(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) seq(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == b.kind {
 		return a.eq(b, pos, ctx)
 	}
 	return Value{kind: boolKind, boolVal: false}, nil
 }
 
-func (a Value) neq(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) neq(b Value, pos int, ctx *evalContext) (Value, error) {
 	val, err := a.eq(b, pos, ctx)
 	if err != nil {
 		return Undefined, err
@@ -457,7 +457,7 @@ func (a Value) neq(b Value, pos int, ctx *Context) (Value, error) {
 	return Bool(!val.Bool()), nil
 }
 
-func (a Value) sneq(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) sneq(b Value, pos int, ctx *evalContext) (Value, error) {
 	val, err := a.seq(b, pos, ctx)
 	if err != nil {
 		return Undefined, err
@@ -465,7 +465,7 @@ func (a Value) sneq(b Value, pos int, ctx *Context) (Value, error) {
 	return Bool(!val.Bool()), nil
 }
 
-func (a Value) and(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) and(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpAnd, a, b, pos, ctx)
 	}
@@ -473,7 +473,7 @@ func (a Value) and(b Value, pos int, ctx *Context) (Value, error) {
 	return Value{kind: boolKind, boolVal: a.boolVal && b.boolVal}, nil
 }
 
-func (a Value) or(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) or(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpOr, a, b, pos, ctx)
 	}
@@ -481,7 +481,7 @@ func (a Value) or(b Value, pos int, ctx *Context) (Value, error) {
 	return Value{kind: boolKind, boolVal: a.boolVal || b.boolVal}, nil
 }
 
-func (a Value) coalesce(b Value, pos int, ctx *Context) (Value, error) {
+func (a Value) coalesce(b Value, pos int, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpCoal, a, b, pos, ctx)
 	}
@@ -665,7 +665,7 @@ func closech(open byte) byte {
 	return open
 }
 
-func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
@@ -726,7 +726,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 		}
 		if g[0] == '(' {
 			// paren groups can be evaluated and used as the leading value.
-			left, err = evalExpr(g[1:len(g)-1], pos+1, steps, nil, ctx)
+			left, err = evalExpr(g[1:len(g)-1], pos+1, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -765,7 +765,8 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			left = Null
 		default:
 			var err error
-			left, err = getRefValue(false, Undefined, ident, pos, false, ctx)
+			left, err = getRefValue(false, Undefined, ident, pos, false,
+				ctx.base)
 			if err != nil {
 				return Undefined, err
 			}
@@ -806,7 +807,7 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 			if !ok {
 				return Undefined, errSyntax(pos)
 			}
-			val, err := getRefValue(true, left, ident, pos, optChain, ctx)
+			val, err := getRefValue(true, left, ident, pos, optChain, ctx.base)
 			if err != nil {
 				return Undefined, err
 			}
@@ -829,13 +830,13 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 							leftIdent)
 				}
 				var val Value
-				if ctx != nil && ctx.Extender != nil {
+				if ctx.base != nil && ctx.base.Extender != nil {
 					var info CallInfo
 					info.Chain = hasLeftLeft
 					info.Value = leftLeft
 					info.Ident = left.strVal
-					info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx}
-					val, err = ctx.Extender.Call(info, ctx)
+					info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx.base}
+					val, err = ctx.base.Extender.Call(info, ctx.base)
 					if err != nil {
 						return Undefined, errCall(err, pos)
 					}
@@ -845,12 +846,13 @@ func evalAtom(expr string, pos, steps int, ctx *Context) (Value, error) {
 				left = val
 			} else {
 				// Computed Member Access
-				last, err := evalExpr(g[1:len(g)-1], 0, steps, nil, ctx)
+				last, err := evalExpr(g[1:len(g)-1], 0, ctx)
 				if err != nil {
 					return Undefined, err
 				}
 				ident := last.String()
-				val, err := getRefValue(true, left, ident, pos, optChain, ctx)
+				val, err := getRefValue(true, left, ident, pos, optChain,
+					ctx.base)
 				if err != nil {
 					return Undefined, err
 				}
@@ -1146,13 +1148,13 @@ func appendRune(dst []byte, r rune) []byte {
 	return dst[:len(dst)-8+n]
 }
 
-func fact(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func fact(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAtom(expr, pos, steps, ctx)
+	right, err := evalAtom(expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1168,7 +1170,7 @@ func fact(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalFacts(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalFacts(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1176,7 +1178,7 @@ func evalFacts(expr string, pos, steps int, ctx *Context) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '*', '/', '%':
-			left, err = fact(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = fact(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1190,18 +1192,18 @@ func evalFacts(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return fact(left, op, expr[s:], pos+s, steps, ctx)
+	return fact(left, op, expr[s:], pos+s, ctx)
 }
 
-func sum(left Value, op byte, expr string, neg, end bool, pos, steps int,
-	ctx *Context,
+func sum(left Value, op byte, expr string, neg, end bool, pos int,
+	ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
 	// parse factors of expression
-	right, err := evalAuto(stepSums<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepSums<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1222,7 +1224,7 @@ func sum(left Value, op byte, expr string, neg, end bool, pos, steps int,
 	}
 }
 
-func evalSums(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalSums(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1254,7 +1256,7 @@ func evalSums(expr string, pos, steps int, ctx *Context) (Value, error) {
 					neg = false
 				}
 			}
-			left, err = sum(left, op, expr[s:i], neg, false, pos+s, steps, ctx)
+			left, err = sum(left, op, expr[s:i], neg, false, pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1282,17 +1284,17 @@ func evalSums(expr string, pos, steps int, ctx *Context) (Value, error) {
 			neg = false
 		}
 	}
-	return sum(left, op, expr[s:], neg, true, pos+s, steps, ctx)
+	return sum(left, op, expr[s:], neg, true, pos+s, ctx)
 }
 
-func comp(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func comp(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
 	// parse next expression
-	right, err := evalAuto(stepComps<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepComps<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1310,7 +1312,7 @@ func comp(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalComps(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalComps(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1324,7 +1326,7 @@ func evalComps(expr string, pos, steps int, ctx *Context) (Value, error) {
 				opch += 32
 				opsz++
 			}
-			left, err = comp(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = comp(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1339,10 +1341,10 @@ func evalComps(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return comp(left, op, expr[s:], pos+s, steps, ctx)
+	return comp(left, op, expr[s:], pos+s, ctx)
 }
 
-func equal(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func equal(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	var neg bool
 	var boolit bool
@@ -1360,7 +1362,7 @@ func equal(left Value, op byte, expr string, pos, steps int, ctx *Context,
 		expr, pos = trim(expr, pos+1)
 	}
 	// parse next expression
-	right, err := evalAuto(stepEquality<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepEquality<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1384,7 +1386,7 @@ func equal(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalEquality(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalEquality(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1414,7 +1416,7 @@ func evalEquality(expr string, pos, steps int, ctx *Context) (Value, error) {
 				opch += 32
 				opsz++
 			}
-			left, err = equal(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = equal(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1429,16 +1431,16 @@ func evalEquality(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return equal(left, op, expr[s:], pos+s, steps, ctx)
+	return equal(left, op, expr[s:], pos+s, ctx)
 }
 
-func bitwiseXOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func bitwiseXOR(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepBitwiseXOR<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepBitwiseXOR<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1450,7 +1452,7 @@ func bitwiseXOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalBitwiseXOR(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalBitwiseXOR(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1458,7 +1460,7 @@ func evalBitwiseXOR(expr string, pos, steps int, ctx *Context) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '^':
-			left, err = bitwiseXOR(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = bitwiseXOR(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1472,16 +1474,16 @@ func evalBitwiseXOR(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return bitwiseXOR(left, op, expr[s:], pos+s, steps, ctx)
+	return bitwiseXOR(left, op, expr[s:], pos+s, ctx)
 }
 
-func bitwiseOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func bitwiseOR(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepBitwiseOR<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepBitwiseOR<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1493,7 +1495,7 @@ func bitwiseOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalBitwiseOR(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalBitwiseOR(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1501,7 +1503,7 @@ func evalBitwiseOR(expr string, pos, steps int, ctx *Context) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '|':
-			left, err = bitwiseOR(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = bitwiseOR(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1515,16 +1517,16 @@ func evalBitwiseOR(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return bitwiseOR(left, op, expr[s:], pos+s, steps, ctx)
+	return bitwiseOR(left, op, expr[s:], pos+s, ctx)
 }
 
-func bitwiseAND(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func bitwiseAND(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepBitwiseAND<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepBitwiseAND<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1536,7 +1538,7 @@ func bitwiseAND(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalBitwiseAND(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalBitwiseAND(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1544,7 +1546,7 @@ func evalBitwiseAND(expr string, pos, steps int, ctx *Context) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '&':
-			left, err = bitwiseAND(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = bitwiseAND(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1558,16 +1560,16 @@ func evalBitwiseAND(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return bitwiseAND(left, op, expr[s:], pos+s, steps, ctx)
+	return bitwiseAND(left, op, expr[s:], pos+s, ctx)
 }
 
-func logicalAND(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func logicalAND(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepLogicalAND<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepLogicalAND<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1579,7 +1581,7 @@ func logicalAND(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalLogicalAND(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalLogicalAND(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1595,7 +1597,7 @@ func evalLogicalAND(expr string, pos, steps int, ctx *Context) (Value, error) {
 				i++
 				continue
 			}
-			left, err = logicalAND(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = logicalAND(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1610,16 +1612,16 @@ func evalLogicalAND(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return logicalAND(left, op, expr[s:], pos+s, steps, ctx)
+	return logicalAND(left, op, expr[s:], pos+s, ctx)
 }
 
-func logicalOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
+func logicalOR(left Value, op byte, expr string, pos int, ctx *evalContext,
 ) (Value, error) {
 	expr, pos = trim(expr, pos)
 	if len(expr) == 0 {
 		return Undefined, errSyntax(pos)
 	}
-	right, err := evalAuto(stepLogicalOR<<1, expr, pos, steps, nil, ctx)
+	right, err := evalAuto(stepLogicalOR<<1, expr, pos, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1633,7 +1635,7 @@ func logicalOR(left Value, op byte, expr string, pos, steps int, ctx *Context,
 	}
 }
 
-func evalLogicalOR(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalLogicalOR(expr string, pos int, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1656,7 +1658,7 @@ func evalLogicalOR(expr string, pos, steps int, ctx *Context) (Value, error) {
 				i++
 				continue
 			}
-			left, err = logicalOR(left, op, expr[s:i], pos+s, steps, ctx)
+			left, err = logicalOR(left, op, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1671,10 +1673,10 @@ func evalLogicalOR(expr string, pos, steps int, ctx *Context) (Value, error) {
 			i = i + len(g) - 1
 		}
 	}
-	return logicalOR(left, op, expr[s:], pos+s, steps, ctx)
+	return logicalOR(left, op, expr[s:], pos+s, ctx)
 }
 
-func evalTerns(expr string, pos, steps int, ctx *Context) (Value, error) {
+func evalTerns(expr string, pos int, ctx *evalContext) (Value, error) {
 	var cond string
 	var s int
 	var depth int
@@ -1696,14 +1698,14 @@ func evalTerns(expr string, pos, steps int, ctx *Context) (Value, error) {
 			if depth == 0 {
 				left := expr[s:i]
 				right := expr[i+1:]
-				res, err := evalExpr(cond, pos, steps, nil, ctx)
+				res, err := evalExpr(cond, pos, ctx)
 				if err != nil {
 					return Undefined, err
 				}
 				if res.Bool() {
-					return evalExpr(left, pos+s, steps, nil, ctx)
+					return evalExpr(left, pos+s, ctx)
 				}
-				return evalExpr(right, pos+i+1, steps, nil, ctx)
+				return evalExpr(right, pos+i+1, ctx)
 			}
 		case '(', '[', '{', '"', '\'', '`':
 			g, err := readGroup(expr[i:], pos+i)
@@ -1714,25 +1716,22 @@ func evalTerns(expr string, pos, steps int, ctx *Context) (Value, error) {
 		}
 	}
 	if depth == 0 {
-		return evalAuto(stepTerns<<1, expr, pos, steps, nil, ctx)
+		return evalAuto(stepTerns<<1, expr, pos, ctx)
 	}
 	return Undefined, errSyntax(pos)
 }
 
-func evalComma(expr string, pos, steps int, iter func(value Value) error,
-	ctx *Context,
-) (Value, error) {
+func evalComma(expr string, pos int, ctx *evalContext) (Value, error) {
 	var s int
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case ',':
-			res, err := evalAuto(stepComma<<1, expr[s:i], pos+s, steps, nil,
-				ctx)
+			res, err := evalAuto(stepComma<<1, expr[s:i], pos+s, ctx)
 			if err != nil {
 				return Undefined, err
 			}
-			if iter != nil {
-				if err := iter(res); err != nil {
+			if ctx.iter != nil {
+				if err := ctx.iter(res); err != nil {
 					if err == ErrStop {
 						return res, nil
 					}
@@ -1748,12 +1747,12 @@ func evalComma(expr string, pos, steps int, iter func(value Value) error,
 			i = i + len(g) - 1
 		}
 	}
-	res, err := evalAuto(stepComma<<1, expr[s:], pos+s, steps, nil, ctx)
+	res, err := evalAuto(stepComma<<1, expr[s:], pos+s, ctx)
 	if err != nil {
 		return Undefined, err
 	}
-	if iter != nil {
-		if err := iter(res); err != nil {
+	if ctx.iter != nil {
+		if err := ctx.iter(res); err != nil {
 			if err == ErrStop {
 				return res, nil
 			}
@@ -1763,75 +1762,71 @@ func evalComma(expr string, pos, steps int, iter func(value Value) error,
 	return res, nil
 }
 
-func evalAuto(step int, expr string, pos, steps int,
-	iter func(value Value) error, ctx *Context,
-) (Value, error) {
+func evalAuto(step int, expr string, pos int, ctx *evalContext) (Value, error) {
 	switch step {
 	case stepComma:
-		if (steps & stepComma) == stepComma {
-			return evalComma(expr, pos, steps, iter, ctx)
+		if (ctx.steps & stepComma) == stepComma {
+			return evalComma(expr, pos, ctx)
 		}
 		fallthrough
 	case stepTerns:
-		if (steps & stepTerns) == stepTerns {
-			return evalTerns(expr, pos, steps, ctx)
+		if (ctx.steps & stepTerns) == stepTerns {
+			return evalTerns(expr, pos, ctx)
 		}
 		fallthrough
 	case stepLogicalOR:
-		if (steps & stepLogicalOR) == stepLogicalOR {
-			return evalLogicalOR(expr, pos, steps, ctx)
+		if (ctx.steps & stepLogicalOR) == stepLogicalOR {
+			return evalLogicalOR(expr, pos, ctx)
 		}
 		fallthrough
 	case stepLogicalAND:
-		if (steps & stepLogicalAND) == stepLogicalAND {
-			return evalLogicalAND(expr, pos, steps, ctx)
+		if (ctx.steps & stepLogicalAND) == stepLogicalAND {
+			return evalLogicalAND(expr, pos, ctx)
 		}
 		fallthrough
 	case stepBitwiseOR:
-		if (steps & stepBitwiseOR) == stepBitwiseOR {
-			return evalBitwiseOR(expr, pos, steps, ctx)
+		if (ctx.steps & stepBitwiseOR) == stepBitwiseOR {
+			return evalBitwiseOR(expr, pos, ctx)
 		}
 		fallthrough
 	case stepBitwiseXOR:
-		if (steps & stepBitwiseXOR) == stepBitwiseXOR {
-			return evalBitwiseXOR(expr, pos, steps, ctx)
+		if (ctx.steps & stepBitwiseXOR) == stepBitwiseXOR {
+			return evalBitwiseXOR(expr, pos, ctx)
 		}
 		fallthrough
 	case stepBitwiseAND:
-		if (steps & stepBitwiseAND) == stepBitwiseAND {
-			return evalBitwiseAND(expr, pos, steps, ctx)
+		if (ctx.steps & stepBitwiseAND) == stepBitwiseAND {
+			return evalBitwiseAND(expr, pos, ctx)
 		}
 		fallthrough
 	case stepEquality:
-		if (steps & stepEquality) == stepEquality {
-			return evalEquality(expr, pos, steps, ctx)
+		if (ctx.steps & stepEquality) == stepEquality {
+			return evalEquality(expr, pos, ctx)
 		}
 		fallthrough
 	case stepComps:
-		if (steps & stepComps) == stepComps {
-			return evalComps(expr, pos, steps, ctx)
+		if (ctx.steps & stepComps) == stepComps {
+			return evalComps(expr, pos, ctx)
 		}
 		fallthrough
 	case stepSums:
-		if (steps & stepSums) == stepSums {
-			return evalSums(expr, pos, steps, ctx)
+		if (ctx.steps & stepSums) == stepSums {
+			return evalSums(expr, pos, ctx)
 		}
 		fallthrough
 	case stepFacts:
-		if (steps & stepFacts) == stepFacts {
-			return evalFacts(expr, pos, steps, ctx)
+		if (ctx.steps & stepFacts) == stepFacts {
+			return evalFacts(expr, pos, ctx)
 		}
 		fallthrough
 	default:
-		return evalAtom(expr, pos, steps, ctx)
+		return evalAtom(expr, pos, ctx)
 	}
 }
 
-func evalExpr(expr string, pos, steps int, iter func(value Value) error,
-	ctx *Context,
-) (Value, error) {
+func evalExpr(expr string, pos int, ctx *evalContext) (Value, error) {
 	// terns >> logicals >> comps >> sums >> facts >> atoms
-	return evalAuto(stepComma, expr, 0, steps, iter, ctx)
+	return evalAuto(stepComma, expr, 0, ctx)
 }
 
 type RefInfo struct {
@@ -1929,6 +1924,27 @@ const (
 	stepFacts                  // 13: Factors (*) (/)
 )
 
+// type stepEvalFunc func(expr string, pos, steps int,
+// 	iter func(value Value) error, ctx *Context,
+// ) (Value, error)
+
+// // must match above
+// var stepAll = [...]stepEvalFunc{
+// 	nil,
+// 	evalComma,
+// 	evalTerns,
+// 	evalLogicalOR,
+// 	evalLogicalAND,
+// 	evalBitwiseOR,
+// 	evalBitwiseXOR,
+// 	evalBitwiseAND,
+// 	evalEquality,
+// 	evalComps,
+// 	evalSums,
+// 	evalFacts,
+// }
+
+// all step tokens
 var opSteps = [256]uint16{
 	',': stepComma,                       // ','
 	'?': stepTerns | stepLogicalOR,       // '?:' '??'
@@ -1945,6 +1961,19 @@ var opSteps = [256]uint16{
 	'*': stepFacts,                       // '*'
 	'/': stepFacts,                       // '/'
 	'%': stepFacts,                       // '%'
+}
+
+// var stepTable = func() []stepEvalFunc {
+// 	table := make([]stepEvalFunc, 32)
+// 	stepComma
+// 	return table
+// }()
+
+type evalContext struct {
+	expr  string                  // original expression
+	steps int                     // all possible steps
+	iter  func(value Value) error // iterator, if any
+	base  *Context                // user context
 }
 
 // Eval evaluates an expression and returns the Result.
@@ -1975,7 +2004,9 @@ func EvalForEach(expr string, iter func(value Value) error, ctx *Context,
 		// require the comma step when using an iterator.
 		steps |= stepComma
 	}
-	r, err := evalExpr(expr, pos, steps, iter, ctx)
+
+	ectx := evalContext{expr, steps, iter, ctx}
+	r, err := evalExpr(expr, pos, &ectx)
 	if err != nil {
 		return Undefined, err
 	}

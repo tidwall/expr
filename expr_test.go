@@ -708,22 +708,22 @@ func TestComputedArgs(t *testing.T) {
 
 func TestEvalBitwiseVarious(t *testing.T) {
 	// check that parital groups and missing left part returns errors
-	if _, err := evalBitwiseAND(` 100 & (100`, 0, 0, nil); err == nil {
+	if _, err := evalBitwiseAND(` 100 & (100`, 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err := evalBitwiseXOR(` 100 ^ (100`, 0, 0, nil); err == nil {
+	if _, err := evalBitwiseXOR(` 100 ^ (100`, 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err := evalBitwiseOR(` 100 | (100`, 0, 0, nil); err == nil {
+	if _, err := evalBitwiseOR(` 100 | (100`, 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err := evalBitwiseAND(`  & (100`, 0, 0, nil); err == nil {
+	if _, err := evalBitwiseAND(`  & (100`, 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err := evalBitwiseXOR(`  ^ (100`, 0, 0, nil); err == nil {
+	if _, err := evalBitwiseXOR(`  ^ (100`, 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err := evalBitwiseOR(`  | (100`, 0, 0, nil); err == nil {
+	if _, err := evalBitwiseOR(`  | (100`, 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
 }
@@ -762,27 +762,27 @@ func TestIdent(t *testing.T) {
 
 func TestEvalAtom(t *testing.T) {
 	// check various atom cases
-	val, err := evalAtom("true", 0, 0, nil)
+	val, err := evalAtom("true", 0, &evalContext{})
 	if err != nil || !val.Bool() {
 		t.Fatal()
 	}
 
-	if _, err = evalAtom("hello", 0, 0, nil); err == nil {
+	if _, err = evalAtom("hello", 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err = evalAtom("(true", 0, 0, nil); err == nil {
+	if _, err = evalAtom("(true", 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err = evalAtom("true?#", 0, 0, nil); err == nil {
+	if _, err = evalAtom("true?#", 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err = evalAtom("true?#", 0, 0, nil); err == nil {
+	if _, err = evalAtom("true?#", 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err = evalAtom("true(", 0, 0, nil); err == nil {
+	if _, err = evalAtom("true(", 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
-	if _, err = evalAtom("true[", 0, 0, nil); err == nil {
+	if _, err = evalAtom("true[", 0, &evalContext{}); err == nil {
 		t.Fatal()
 	}
 	ref := func(info RefInfo, ctx *Context) (Value, error) {
@@ -792,7 +792,7 @@ func TestEvalAtom(t *testing.T) {
 		return Undefined, nil
 	}
 	sopts := simpleExtendorOptions(nil, ref, nil, nil)
-	if _, err = evalAtom("myfn()", 0, 0, &sopts); err != nil {
+	if _, err = evalAtom("myfn()", 0, &evalContext{base: &sopts}); err != nil {
 		t.Fatal()
 	}
 }
@@ -929,7 +929,7 @@ func BenchmarkSimpleCompRef(b *testing.B) {
 }
 
 func TestNoDoOp(t *testing.T) {
-	_, err := doOp("", Undefined, Undefined, 0, nil)
+	_, err := doOp("", Undefined, Undefined, 0, &evalContext{})
 	if err == nil {
 		t.Fatal()
 	}
