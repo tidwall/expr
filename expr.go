@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 )
 
-func errUndefined(ident string, pos int, chain bool) error {
+func errUndefined(ident string, chain bool) error {
 	var err error
 	if chain {
 		err = fmt.Errorf("Uncaught TypeError: "+
@@ -22,30 +22,30 @@ func errUndefined(ident string, pos int, chain bool) error {
 	} else {
 		err = fmt.Errorf("ReferenceError: %s is not defined", ident)
 	}
-	return &errEval{pos: pos, err: err, udef: true}
+	return &errEval{err: err, udef: true}
 }
 
-func errOperator(err error, pos int) error {
+func errOperator(err error) error {
 	return &errEval{
-		pos: pos, err: fmt.Errorf("OperatorError: %w", err),
+		err: fmt.Errorf("OperatorError: %w", err),
 	}
 }
 
-func errReference(err error, pos int) error {
+func errReference(err error) error {
 	return &errEval{
-		pos: pos, err: fmt.Errorf("ReferenceError: %w", err),
+		err: fmt.Errorf("ReferenceError: %w", err),
 	}
 }
 
-func errCall(err error, pos int) error {
+func errCall(err error) error {
 	return &errEval{
-		pos: pos, err: fmt.Errorf("CallError: %w", err),
+		err: fmt.Errorf("CallError: %w", err),
 	}
 }
 
-func errSyntax(pos int) error {
+func errSyntax() error {
 	return &errEval{
-		pos: pos, err: errors.New("SyntaxError"),
+		err: errors.New("SyntaxError"),
 	}
 }
 
@@ -59,7 +59,6 @@ type booler interface{ Bool() bool }
 type stringer interface{ String() string }
 
 type errEval struct {
-	pos  int
 	err  error
 	udef bool
 }
@@ -71,9 +70,6 @@ func (err *errEval) Error() string {
 // CharPosOfErr returns the character position of where the error occured in
 // the Eval function, or -1 if unknown
 func CharPosOfErr(err error) int {
-	if err, ok := err.(*errEval); ok {
-		return err.pos
-	}
 	return -1
 }
 
@@ -173,21 +169,21 @@ func (a Value) TypeOf() string {
 // Function
 func Function(name string) Value { return Value{kind: funcKind, strVal: name} }
 
-func doOp(op Op, a, b Value, pos int, ctx *evalContext) (Value, error) {
+func doOp(op Op, a, b Value, ctx *evalContext) (Value, error) {
 	if ctx.base != nil && ctx.base.Extender != nil {
 		info := OpInfo{Left: a, Op: op, Right: b}
 		v, err := ctx.base.Extender.Op(info, ctx.base)
 		if err == nil {
 			return v, nil
 		}
-		return Undefined, errOperator(err, pos)
+		return Undefined, errOperator(err)
 	}
-	return Undefined, errOperator(errors.New("undefined "), pos)
+	return Undefined, errOperator(errors.New("undefined "))
 }
 
-func (a Value) add(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) add(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpAdd, a, b, pos, ctx)
+		return doOp(OpAdd, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -219,9 +215,9 @@ func (a Value) isnum() bool {
 	return false
 }
 
-func (a Value) bor(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) bor(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpBitOr, a, b, pos, ctx)
+		return doOp(OpBitOr, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -242,9 +238,9 @@ func (a Value) bor(b Value, pos int, ctx *evalContext) (Value, error) {
 		floatVal: float64(int64(a.floatVal) | int64(b.floatVal)),
 	}, nil
 }
-func (a Value) band(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) band(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpBitAnd, a, b, pos, ctx)
+		return doOp(OpBitAnd, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -265,9 +261,9 @@ func (a Value) band(b Value, pos int, ctx *evalContext) (Value, error) {
 		floatVal: float64(int64(a.floatVal) & int64(b.floatVal)),
 	}, nil
 }
-func (a Value) xor(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) xor(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpBitXor, a, b, pos, ctx)
+		return doOp(OpBitXor, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -290,9 +286,9 @@ func (a Value) xor(b Value, pos int, ctx *evalContext) (Value, error) {
 
 }
 
-func (a Value) sub(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) sub(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpSub, a, b, pos, ctx)
+		return doOp(OpSub, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -308,9 +304,9 @@ func (a Value) sub(b Value, pos int, ctx *evalContext) (Value, error) {
 	return Value{kind: floatKind, floatVal: a.floatVal - b.floatVal}, nil
 }
 
-func (a Value) mul(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) mul(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpMul, a, b, pos, ctx)
+		return doOp(OpMul, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -326,9 +322,9 @@ func (a Value) mul(b Value, pos int, ctx *evalContext) (Value, error) {
 	return Value{kind: floatKind, floatVal: a.floatVal * b.floatVal}, nil
 }
 
-func (a Value) div(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) div(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpDiv, a, b, pos, ctx)
+		return doOp(OpDiv, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -349,9 +345,9 @@ func (a Value) div(b Value, pos int, ctx *evalContext) (Value, error) {
 	a, b = a.tofval(), b.tofval()
 	return Value{kind: floatKind, floatVal: a.floatVal / b.floatVal}, nil
 }
-func (a Value) mod(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) mod(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpMod, a, b, pos, ctx)
+		return doOp(OpMod, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -373,9 +369,9 @@ func (a Value) mod(b Value, pos int, ctx *evalContext) (Value, error) {
 	return Value{kind: floatKind, floatVal: math.Mod(a.floatVal, b.floatVal)}, nil
 }
 
-func (a Value) lt(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) lt(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpLt, a, b, pos, ctx)
+		return doOp(OpLt, a, b, ctx)
 	}
 	if a.kind == b.kind {
 		switch a.kind {
@@ -393,97 +389,97 @@ func (a Value) lt(b Value, pos int, ctx *evalContext) (Value, error) {
 	return Value{kind: boolKind, boolVal: a.floatVal < b.floatVal}, nil
 }
 
-func (a Value) lte(b Value, pos int, ctx *evalContext) (Value, error) {
-	t, err := a.lt(b, pos, ctx)
+func (a Value) lte(b Value, ctx *evalContext) (Value, error) {
+	t, err := a.lt(b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	if t.Bool() {
 		return t, nil
 	}
-	t, err = b.lt(a, pos, ctx)
+	t, err = b.lt(a, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) gt(b Value, pos int, ctx *evalContext) (Value, error) {
-	return b.lt(a, pos, ctx)
+func (a Value) gt(b Value, ctx *evalContext) (Value, error) {
+	return b.lt(a, ctx)
 }
 
-func (a Value) gte(b Value, pos int, ctx *evalContext) (Value, error) {
-	t, err := a.gt(b, pos, ctx)
+func (a Value) gte(b Value, ctx *evalContext) (Value, error) {
+	t, err := a.gt(b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	if t.Bool() {
 		return t, nil
 	}
-	t, err = b.gt(a, pos, ctx)
+	t, err = b.gt(a, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) eq(b Value, pos int, ctx *evalContext) (Value, error) {
-	t, err := a.lt(b, pos, ctx)
+func (a Value) eq(b Value, ctx *evalContext) (Value, error) {
+	t, err := a.lt(b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	if t.Bool() {
 		return Bool(false), nil
 	}
-	t, err = b.lt(a, pos, ctx)
+	t, err = b.lt(a, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) seq(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) seq(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == b.kind {
-		return a.eq(b, pos, ctx)
+		return a.eq(b, ctx)
 	}
 	return Value{kind: boolKind, boolVal: false}, nil
 }
 
-func (a Value) neq(b Value, pos int, ctx *evalContext) (Value, error) {
-	val, err := a.eq(b, pos, ctx)
+func (a Value) neq(b Value, ctx *evalContext) (Value, error) {
+	val, err := a.eq(b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!val.Bool()), nil
 }
 
-func (a Value) sneq(b Value, pos int, ctx *evalContext) (Value, error) {
-	val, err := a.seq(b, pos, ctx)
+func (a Value) sneq(b Value, ctx *evalContext) (Value, error) {
+	val, err := a.seq(b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!val.Bool()), nil
 }
 
-func (a Value) and(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) and(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpAnd, a, b, pos, ctx)
+		return doOp(OpAnd, a, b, ctx)
 	}
 	a, b = a.tobool(), b.tobool()
 	return Value{kind: boolKind, boolVal: a.boolVal && b.boolVal}, nil
 }
 
-func (a Value) or(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) or(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpOr, a, b, pos, ctx)
+		return doOp(OpOr, a, b, ctx)
 	}
 	a, b = a.tobool(), b.tobool()
 	return Value{kind: boolKind, boolVal: a.boolVal || b.boolVal}, nil
 }
 
-func (a Value) coalesce(b Value, pos int, ctx *evalContext) (Value, error) {
+func (a Value) coalesce(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
-		return doOp(OpCoal, a, b, pos, ctx)
+		return doOp(OpCoal, a, b, ctx)
 	}
 	switch a.kind {
 	case undefKind, nullKind:
@@ -665,10 +661,10 @@ func closech(open byte) byte {
 	return open
 }
 
-func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
-	expr, pos = trim(expr, pos)
+func evalAtom(expr string, ctx *evalContext) (Value, error) {
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
 
 	var left Value
@@ -681,7 +677,7 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 			// hexadecimal
 			x, err := strconv.ParseUint(expr[2:], 16, 64)
 			if err != nil {
-				return Undefined, errSyntax(pos)
+				return Undefined, errSyntax()
 			}
 			return Float64(float64(x)), nil
 		}
@@ -691,21 +687,21 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 			if expr[len(expr)-3] == 'u' {
 				x, err := strconv.ParseUint(expr[:len(expr)-3], 10, 64)
 				if err != nil {
-					return Undefined, errSyntax(pos)
+					return Undefined, errSyntax()
 				}
 				return Uint64(x), nil
 			}
 			if expr[len(expr)-3] == 'i' {
 				x, err := strconv.ParseInt(expr[:len(expr)-3], 10, 64)
 				if err != nil {
-					return Undefined, errSyntax(pos)
+					return Undefined, errSyntax()
 				}
 				return Int64(x), nil
 			}
 		}
 		x, err := strconv.ParseFloat(expr, 64)
 		if err != nil {
-			return Undefined, errSyntax(pos)
+			return Undefined, errSyntax()
 		}
 		return Float64(x), nil
 	case '"', '\'', '`':
@@ -713,30 +709,28 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 		var ok bool
 		s, raw, ok := parseString(expr)
 		if !ok {
-			return Undefined, errSyntax(pos)
+			return Undefined, errSyntax()
 		}
 		left = String(s)
 		leftReady = true
 		expr = expr[len(raw):]
-		pos += len(raw)
 	case '(', '{', '[':
-		g, err := readGroup(expr, pos)
+		g, err := readGroup(expr)
 		if err != nil {
 			return Undefined, err
 		}
 		if g[0] == '(' {
 			// paren groups can be evaluated and used as the leading value.
-			left, err = evalExpr(g[1:len(g)-1], pos+1, ctx)
+			left, err = evalExpr(g[1:len(g)-1], ctx)
 			if err != nil {
 				return Undefined, err
 			}
 			leftReady = true
 			expr = expr[len(g):]
-			pos += len(g)
 		} else {
 			// '{', '[' not currently allowed as a leading value
 			// Perhaps in the future.
-			return Undefined, errSyntax(pos)
+			return Undefined, errSyntax()
 		}
 	}
 
@@ -746,11 +740,11 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 		// probably a chainable identifier
 		ident, ok := readIdent(expr)
 		if !ok {
-			return Undefined, errSyntax(pos)
+			return Undefined, errSyntax()
 		}
 		switch ident {
 		case "new", "typeof", "void", "await", "in", "instanceof", "yield":
-			return Undefined, errSyntax(pos)
+			return Undefined, errSyntax()
 		case "true":
 			left = Bool(true)
 		case "false":
@@ -765,7 +759,7 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 			left = Null
 		default:
 			var err error
-			left, err = getRefValue(false, Undefined, ident, pos, false,
+			left, err = getRefValue(false, Undefined, ident, false,
 				ctx.base)
 			if err != nil {
 				return Undefined, err
@@ -773,7 +767,6 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 		}
 		leftReady = true
 		expr = expr[len(ident):]
-		pos += len(ident)
 		leftIdent = ident
 	}
 
@@ -784,7 +777,7 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 	optChain := false
 	for {
 		// There are more components to read
-		expr, pos = trim(expr, pos)
+		expr = trim(expr)
 		if len(expr) == 0 {
 			break
 		}
@@ -792,22 +785,20 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 		case '?':
 			// Optional chaining
 			if len(expr) == 1 || expr[1] != '.' {
-				return Undefined, errSyntax(pos)
+				return Undefined, errSyntax()
 			}
 			expr = expr[1:]
-			pos++
 			optChain = true
 			fallthrough
 		case '.':
 			// Member Access
 			expr = expr[1:]
-			pos++
-			expr, pos = trim(expr, pos)
+			expr = trim(expr)
 			ident, ok := readIdent(expr)
 			if !ok {
-				return Undefined, errSyntax(pos)
+				return Undefined, errSyntax()
 			}
-			val, err := getRefValue(true, left, ident, pos, optChain, ctx.base)
+			val, err := getRefValue(true, left, ident, optChain, ctx.base)
 			if err != nil {
 				return Undefined, err
 			}
@@ -815,10 +806,9 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 			hasLeftLeft = true
 			left = val
 			expr = expr[len(ident):]
-			pos += len(ident)
 			leftIdent = ident
 		case '(', '[':
-			g, err := readGroup(expr, pos)
+			g, err := readGroup(expr)
 			if err != nil {
 				return Undefined, err
 			}
@@ -838,7 +828,7 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 					info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx.base}
 					val, err = ctx.base.Extender.Call(info, ctx.base)
 					if err != nil {
-						return Undefined, errCall(err, pos)
+						return Undefined, errCall(err)
 					}
 				}
 				leftLeft = left
@@ -846,12 +836,12 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 				left = val
 			} else {
 				// Computed Member Access
-				last, err := evalExpr(g[1:len(g)-1], 0, ctx)
+				last, err := evalExpr(g[1:len(g)-1], ctx)
 				if err != nil {
 					return Undefined, err
 				}
 				ident := last.String()
-				val, err := getRefValue(true, left, ident, pos, optChain,
+				val, err := getRefValue(true, left, ident, optChain,
 					ctx.base)
 				if err != nil {
 					return Undefined, err
@@ -861,9 +851,8 @@ func evalAtom(expr string, pos int, ctx *evalContext) (Value, error) {
 				left = val
 			}
 			expr = expr[len(g):]
-			pos += len(g)
 		default:
-			return Undefined, errSyntax(pos)
+			return Undefined, errSyntax()
 		}
 	}
 	return left, nil
@@ -903,20 +892,20 @@ func (args *Args) ForEachValue(iter func(value Value) error) error {
 	return err
 }
 
-func getRefValue(chain bool, left Value, ident string, pos int, optChain bool,
+func getRefValue(chain bool, left Value, ident string, optChain bool,
 	ctx *Context,
 ) (Value, error) {
 	val, err := func() (Value, error) {
 		if ctx == nil || ctx.Extender == nil {
-			return Undefined, errUndefined(ident, pos, chain)
+			return Undefined, errUndefined(ident, chain)
 		}
 		info := RefInfo{Chain: chain, Value: left, Ident: ident}
 		val, err := ctx.Extender.Ref(info, ctx)
 		if err != nil {
-			return Undefined, errReference(err, pos)
+			return Undefined, errReference(err)
 		}
 		if val == Undefined && left == Undefined {
-			return Undefined, errUndefined(ident, pos, chain)
+			return Undefined, errUndefined(ident, chain)
 		}
 		return val, nil
 	}()
@@ -1148,29 +1137,29 @@ func appendRune(dst []byte, r rune) []byte {
 	return dst[:len(dst)-8+n]
 }
 
-func fact(left Value, op byte, expr string, pos int, ctx *evalContext,
+func fact(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
-	right, err := evalAtom(expr, pos, ctx)
+	right, err := evalAtom(expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '*':
-		return left.mul(right, pos, ctx)
+		return left.mul(right, ctx)
 	case '/':
-		return left.div(right, pos, ctx)
+		return left.div(right, ctx)
 	case '%':
-		return left.mod(right, pos, ctx)
+		return left.mod(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalFacts(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalFacts(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1178,53 +1167,53 @@ func evalFacts(expr string, pos int, ctx *evalContext) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '*', '/', '%':
-			left, err = fact(left, op, expr[s:i], pos+s, ctx)
+			left, err = fact(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
 			op = expr[i]
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return fact(left, op, expr[s:], pos+s, ctx)
+	return fact(left, op, expr[s:], ctx)
 }
 
-func sum(left Value, op byte, expr string, neg, end bool, pos int,
+func sum(left Value, op byte, expr string, neg, end bool,
 	ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
 	// parse factors of expression
-	right, err := evalAuto(stepSums<<1, expr, pos, ctx)
+	right, err := evalAuto(stepSums<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	if neg {
 		// make right negative
-		right, err = right.mul(Float64(-1), pos, ctx)
+		right, err = right.mul(Float64(-1), ctx)
 		if err != nil {
 			return Undefined, err
 		}
 	}
 	switch op {
 	case '+':
-		return left.add(right, pos, ctx)
+		return left.add(right, ctx)
 	case '-':
-		return left.sub(right, pos, ctx)
+		return left.sub(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalSums(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalSums(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1237,7 +1226,7 @@ func evalSums(expr string, pos int, ctx *evalContext) (Value, error) {
 			if !fill {
 				if i > 0 && expr[i-1] == expr[i] {
 					// -- not allowed
-					return Undefined, errSyntax(pos + i)
+					return Undefined, errSyntax()
 				}
 				if expr[i] == '-' {
 					neg = !neg
@@ -1256,7 +1245,7 @@ func evalSums(expr string, pos int, ctx *evalContext) (Value, error) {
 					neg = false
 				}
 			}
-			left, err = sum(left, op, expr[s:i], neg, false, pos+s, ctx)
+			left, err = sum(left, op, expr[s:i], neg, false, ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1265,7 +1254,7 @@ func evalSums(expr string, pos int, ctx *evalContext) (Value, error) {
 			fill = false
 			neg = false
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
@@ -1284,35 +1273,35 @@ func evalSums(expr string, pos int, ctx *evalContext) (Value, error) {
 			neg = false
 		}
 	}
-	return sum(left, op, expr[s:], neg, true, pos+s, ctx)
+	return sum(left, op, expr[s:], neg, true, ctx)
 }
 
-func comp(left Value, op byte, expr string, pos int, ctx *evalContext,
+func comp(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
 	// parse next expression
-	right, err := evalAuto(stepComps<<1, expr, pos, ctx)
+	right, err := evalAuto(stepComps<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '<':
-		return left.lt(right, pos, ctx)
+		return left.lt(right, ctx)
 	case '<' + 32:
-		return left.lte(right, pos, ctx)
+		return left.lte(right, ctx)
 	case '>':
-		return left.gt(right, pos, ctx)
+		return left.gt(right, ctx)
 	case '>' + 32:
-		return left.gte(right, pos, ctx)
+		return left.gte(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalComps(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalComps(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1326,7 +1315,7 @@ func evalComps(expr string, pos int, ctx *evalContext) (Value, error) {
 				opch += 32
 				opsz++
 			}
-			left, err = comp(left, op, expr[s:i], pos+s, ctx)
+			left, err = comp(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1334,24 +1323,24 @@ func evalComps(expr string, pos int, ctx *evalContext) (Value, error) {
 			i = i + opsz - 1
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return comp(left, op, expr[s:], pos+s, ctx)
+	return comp(left, op, expr[s:], ctx)
 }
 
-func equal(left Value, op byte, expr string, pos int, ctx *evalContext,
+func equal(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
 	var neg bool
 	var boolit bool
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	for {
 		if len(expr) == 0 {
-			return Undefined, errSyntax(pos)
+			return Undefined, errSyntax()
 		}
 		if expr[0] != '!' {
 			break
@@ -1359,10 +1348,10 @@ func equal(left Value, op byte, expr string, pos int, ctx *evalContext,
 		neg = !neg
 		boolit = true
 		expr = expr[1:]
-		expr, pos = trim(expr, pos+1)
+		expr = trim(expr)
 	}
 	// parse next expression
-	right, err := evalAuto(stepEquality<<1, expr, pos, ctx)
+	right, err := evalAuto(stepEquality<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1374,19 +1363,19 @@ func equal(left Value, op byte, expr string, pos int, ctx *evalContext,
 	}
 	switch op {
 	case '=':
-		return left.eq(right, pos, ctx)
+		return left.eq(right, ctx)
 	case '!':
-		return left.neq(right, pos, ctx)
+		return left.neq(right, ctx)
 	case '=' + 32:
-		return left.seq(right, pos, ctx)
+		return left.seq(right, ctx)
 	case '!' + 32:
-		return left.sneq(right, pos, ctx)
+		return left.sneq(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalEquality(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalEquality(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1402,7 +1391,7 @@ func evalEquality(expr string, pos int, ctx *evalContext) (Value, error) {
 					continue
 				}
 				if i == len(expr)-1 || expr[i+1] != '=' {
-					return Undefined, errSyntax(pos + i)
+					return Undefined, errSyntax()
 				}
 				opsz++
 			case '!':
@@ -1416,7 +1405,7 @@ func evalEquality(expr string, pos int, ctx *evalContext) (Value, error) {
 				opch += 32
 				opsz++
 			}
-			left, err = equal(left, op, expr[s:i], pos+s, ctx)
+			left, err = equal(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1424,35 +1413,35 @@ func evalEquality(expr string, pos int, ctx *evalContext) (Value, error) {
 			i = i + opsz - 1
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return equal(left, op, expr[s:], pos+s, ctx)
+	return equal(left, op, expr[s:], ctx)
 }
 
-func bitwiseXOR(left Value, op byte, expr string, pos int, ctx *evalContext,
+func bitwiseXOR(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
-	right, err := evalAuto(stepBitwiseXOR<<1, expr, pos, ctx)
+	right, err := evalAuto(stepBitwiseXOR<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '^':
-		return left.xor(right, pos, ctx)
+		return left.xor(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalBitwiseXOR(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalBitwiseXOR(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1460,42 +1449,42 @@ func evalBitwiseXOR(expr string, pos int, ctx *evalContext) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '^':
-			left, err = bitwiseXOR(left, op, expr[s:i], pos+s, ctx)
+			left, err = bitwiseXOR(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
 			op = expr[i]
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return bitwiseXOR(left, op, expr[s:], pos+s, ctx)
+	return bitwiseXOR(left, op, expr[s:], ctx)
 }
 
-func bitwiseOR(left Value, op byte, expr string, pos int, ctx *evalContext,
+func bitwiseOR(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
-	right, err := evalAuto(stepBitwiseOR<<1, expr, pos, ctx)
+	right, err := evalAuto(stepBitwiseOR<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '|':
-		return left.bor(right, pos, ctx)
+		return left.bor(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalBitwiseOR(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalBitwiseOR(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1503,42 +1492,42 @@ func evalBitwiseOR(expr string, pos int, ctx *evalContext) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '|':
-			left, err = bitwiseOR(left, op, expr[s:i], pos+s, ctx)
+			left, err = bitwiseOR(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
 			op = expr[i]
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return bitwiseOR(left, op, expr[s:], pos+s, ctx)
+	return bitwiseOR(left, op, expr[s:], ctx)
 }
 
-func bitwiseAND(left Value, op byte, expr string, pos int, ctx *evalContext,
+func bitwiseAND(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
-	right, err := evalAuto(stepBitwiseAND<<1, expr, pos, ctx)
+	right, err := evalAuto(stepBitwiseAND<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '&':
-		return left.band(right, pos, ctx)
+		return left.band(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalBitwiseAND(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalBitwiseAND(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1546,42 +1535,42 @@ func evalBitwiseAND(expr string, pos int, ctx *evalContext) (Value, error) {
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case '&':
-			left, err = bitwiseAND(left, op, expr[s:i], pos+s, ctx)
+			left, err = bitwiseAND(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
 			op = expr[i]
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return bitwiseAND(left, op, expr[s:], pos+s, ctx)
+	return bitwiseAND(left, op, expr[s:], ctx)
 }
 
-func logicalAND(left Value, op byte, expr string, pos int, ctx *evalContext,
+func logicalAND(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
-	right, err := evalAuto(stepLogicalAND<<1, expr, pos, ctx)
+	right, err := evalAuto(stepLogicalAND<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '&':
-		return left.and(right, pos, ctx)
+		return left.and(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalLogicalAND(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalLogicalAND(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1590,14 +1579,14 @@ func evalLogicalAND(expr string, pos int, ctx *evalContext) (Value, error) {
 		switch expr[i] {
 		case '&':
 			if i+1 == len(expr) {
-				return Undefined, errSyntax(pos + i)
+				return Undefined, errSyntax()
 			}
 			if expr[i+1] != '&' {
 				// bitwise AND
 				i++
 				continue
 			}
-			left, err = logicalAND(left, op, expr[s:i], pos+s, ctx)
+			left, err = logicalAND(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1605,37 +1594,37 @@ func evalLogicalAND(expr string, pos int, ctx *evalContext) (Value, error) {
 			i++
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return logicalAND(left, op, expr[s:], pos+s, ctx)
+	return logicalAND(left, op, expr[s:], ctx)
 }
 
-func logicalOR(left Value, op byte, expr string, pos int, ctx *evalContext,
+func logicalOR(left Value, op byte, expr string, ctx *evalContext,
 ) (Value, error) {
-	expr, pos = trim(expr, pos)
+	expr = trim(expr)
 	if len(expr) == 0 {
-		return Undefined, errSyntax(pos)
+		return Undefined, errSyntax()
 	}
-	right, err := evalAuto(stepLogicalOR<<1, expr, pos, ctx)
+	right, err := evalAuto(stepLogicalOR<<1, expr, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	switch op {
 	case '|':
-		return left.or(right, pos, ctx)
+		return left.or(right, ctx)
 	case '?':
-		return left.coalesce(right, pos, ctx)
+		return left.coalesce(right, ctx)
 	default:
 		return right, nil
 	}
 }
 
-func evalLogicalOR(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalLogicalOR(expr string, ctx *evalContext) (Value, error) {
 	var err error
 	var s int
 	var left Value
@@ -1651,14 +1640,14 @@ func evalLogicalOR(expr string, pos int, ctx *evalContext) (Value, error) {
 			fallthrough
 		case '|':
 			if i+1 == len(expr) {
-				return Undefined, errSyntax(pos + i)
+				return Undefined, errSyntax()
 			}
 			if expr[i+1] != expr[i] {
 				// bitwise OR
 				i++
 				continue
 			}
-			left, err = logicalOR(left, op, expr[s:i], pos+s, ctx)
+			left, err = logicalOR(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1666,17 +1655,17 @@ func evalLogicalOR(expr string, pos int, ctx *evalContext) (Value, error) {
 			i++
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	return logicalOR(left, op, expr[s:], pos+s, ctx)
+	return logicalOR(left, op, expr[s:], ctx)
 }
 
-func evalTerns(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalTerns(expr string, ctx *evalContext) (Value, error) {
 	var cond string
 	var s int
 	var depth int
@@ -1698,17 +1687,17 @@ func evalTerns(expr string, pos int, ctx *evalContext) (Value, error) {
 			if depth == 0 {
 				left := expr[s:i]
 				right := expr[i+1:]
-				res, err := evalExpr(cond, pos, ctx)
+				res, err := evalExpr(cond, ctx)
 				if err != nil {
 					return Undefined, err
 				}
 				if res.Bool() {
-					return evalExpr(left, pos+s, ctx)
+					return evalExpr(left, ctx)
 				}
-				return evalExpr(right, pos+i+1, ctx)
+				return evalExpr(right, ctx)
 			}
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
@@ -1716,17 +1705,17 @@ func evalTerns(expr string, pos int, ctx *evalContext) (Value, error) {
 		}
 	}
 	if depth == 0 {
-		return evalAuto(stepTerns<<1, expr, pos, ctx)
+		return evalAuto(stepTerns<<1, expr, ctx)
 	}
-	return Undefined, errSyntax(pos)
+	return Undefined, errSyntax()
 }
 
-func evalComma(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalComma(expr string, ctx *evalContext) (Value, error) {
 	var s int
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case ',':
-			res, err := evalAuto(stepComma<<1, expr[s:i], pos+s, ctx)
+			res, err := evalAuto(stepComma<<1, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
 			}
@@ -1740,14 +1729,14 @@ func evalComma(expr string, pos int, ctx *evalContext) (Value, error) {
 			}
 			s = i + 1
 		case '(', '[', '{', '"', '\'', '`':
-			g, err := readGroup(expr[i:], pos+i)
+			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
 			}
 			i = i + len(g) - 1
 		}
 	}
-	res, err := evalAuto(stepComma<<1, expr[s:], pos+s, ctx)
+	res, err := evalAuto(stepComma<<1, expr[s:], ctx)
 	if err != nil {
 		return Undefined, err
 	}
@@ -1762,71 +1751,71 @@ func evalComma(expr string, pos int, ctx *evalContext) (Value, error) {
 	return res, nil
 }
 
-func evalAuto(step int, expr string, pos int, ctx *evalContext) (Value, error) {
+func evalAuto(step int, expr string, ctx *evalContext) (Value, error) {
 	switch step {
 	case stepComma:
 		if (ctx.steps & stepComma) == stepComma {
-			return evalComma(expr, pos, ctx)
+			return evalComma(expr, ctx)
 		}
 		fallthrough
 	case stepTerns:
 		if (ctx.steps & stepTerns) == stepTerns {
-			return evalTerns(expr, pos, ctx)
+			return evalTerns(expr, ctx)
 		}
 		fallthrough
 	case stepLogicalOR:
 		if (ctx.steps & stepLogicalOR) == stepLogicalOR {
-			return evalLogicalOR(expr, pos, ctx)
+			return evalLogicalOR(expr, ctx)
 		}
 		fallthrough
 	case stepLogicalAND:
 		if (ctx.steps & stepLogicalAND) == stepLogicalAND {
-			return evalLogicalAND(expr, pos, ctx)
+			return evalLogicalAND(expr, ctx)
 		}
 		fallthrough
 	case stepBitwiseOR:
 		if (ctx.steps & stepBitwiseOR) == stepBitwiseOR {
-			return evalBitwiseOR(expr, pos, ctx)
+			return evalBitwiseOR(expr, ctx)
 		}
 		fallthrough
 	case stepBitwiseXOR:
 		if (ctx.steps & stepBitwiseXOR) == stepBitwiseXOR {
-			return evalBitwiseXOR(expr, pos, ctx)
+			return evalBitwiseXOR(expr, ctx)
 		}
 		fallthrough
 	case stepBitwiseAND:
 		if (ctx.steps & stepBitwiseAND) == stepBitwiseAND {
-			return evalBitwiseAND(expr, pos, ctx)
+			return evalBitwiseAND(expr, ctx)
 		}
 		fallthrough
 	case stepEquality:
 		if (ctx.steps & stepEquality) == stepEquality {
-			return evalEquality(expr, pos, ctx)
+			return evalEquality(expr, ctx)
 		}
 		fallthrough
 	case stepComps:
 		if (ctx.steps & stepComps) == stepComps {
-			return evalComps(expr, pos, ctx)
+			return evalComps(expr, ctx)
 		}
 		fallthrough
 	case stepSums:
 		if (ctx.steps & stepSums) == stepSums {
-			return evalSums(expr, pos, ctx)
+			return evalSums(expr, ctx)
 		}
 		fallthrough
 	case stepFacts:
 		if (ctx.steps & stepFacts) == stepFacts {
-			return evalFacts(expr, pos, ctx)
+			return evalFacts(expr, ctx)
 		}
 		fallthrough
 	default:
-		return evalAtom(expr, pos, ctx)
+		return evalAtom(expr, ctx)
 	}
 }
 
-func evalExpr(expr string, pos int, ctx *evalContext) (Value, error) {
+func evalExpr(expr string, ctx *evalContext) (Value, error) {
 	// terns >> logicals >> comps >> sums >> facts >> atoms
-	return evalAuto(stepComma, expr, 0, ctx)
+	return evalAuto(stepComma, expr, ctx)
 }
 
 type RefInfo struct {
@@ -1924,7 +1913,7 @@ const (
 	stepFacts                  // 13: Factors (*) (/)
 )
 
-// type stepEvalFunc func(expr string, pos, steps int,
+// type stepEvalFunc func(expr string, steps int,
 // 	iter func(value Value) error, ctx *Context,
 // ) (Value, error)
 
@@ -1989,8 +1978,7 @@ func Eval(expr string, ctx *Context) (Value, error) {
 // same error.
 func EvalForEach(expr string, iter func(value Value) error, ctx *Context,
 ) (Value, error) {
-	var pos int
-	expr, pos = trim(expr, 0)
+	expr = trim(expr)
 	if len(expr) == 0 {
 		return Undefined, nil
 	}
@@ -2006,20 +1994,20 @@ func EvalForEach(expr string, iter func(value Value) error, ctx *Context,
 	}
 
 	ectx := evalContext{expr, steps, iter, ctx}
-	r, err := evalExpr(expr, pos, &ectx)
+	r, err := evalExpr(expr, &ectx)
 	if err != nil {
 		return Undefined, err
 	}
 	return r, nil
 }
 
-func readGroup(data string, pos int) (string, error) {
+func readGroup(data string) (string, error) {
 	g, ok := squash(data)
 	if !ok {
-		return "", errSyntax(pos)
+		return "", errSyntax()
 	}
 	if len(g) < 2 || g[len(g)-1] != closech(data[0]) {
-		return "", errSyntax(pos)
+		return "", errSyntax()
 	}
 	return g, nil
 }
@@ -2099,13 +2087,12 @@ func ishex(c byte) bool {
 
 // trim a simple ascii string along with doing position counting.
 // This is a tad bit faster than strings.TrimSpace.
-func trim(s string, pos int) (string, int) {
+func trim(s string) string {
 	for len(s) > 0 && isspace(s[0]) {
 		s = s[1:]
-		pos++
 	}
 	for len(s) > 0 && isspace(s[len(s)-1]) {
 		s = s[:len(s)-1]
 	}
-	return s, pos
+	return s
 }
