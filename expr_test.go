@@ -301,8 +301,6 @@ var testTable = []string{
 	(`(false??1)+1`), (`1`),
 	(`(true??1)+1`), (`2`),
 	(`(cust(1)??cust(2))+1`), (`2`),
-	("`hello world`"), ("hello world"),
-	("`hello \"\" world`"), (`hello "" world`),
 	("'hello \\'\"\"\\a\\xFF\\p world'"), (`hello '""aÿp world`),
 	("'\\xFG'"), (`SyntaxError`),
 	(`"\u{A}"`), ("\n"),

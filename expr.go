@@ -708,7 +708,7 @@ func evalAtom(expr string, ctx *evalContext) (Value, error) {
 			return Undefined, errSyntax()
 		}
 		return Float64(x), nil
-	case '"', '\'', '`':
+	case '"', '\'':
 		var s string
 		var ok bool
 		s, raw, ok := parseString(expr)
@@ -1166,7 +1166,7 @@ func evalFacts(expr string, ctx *evalContext) (Value, error) {
 			}
 			op = expr[i]
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1246,7 +1246,7 @@ func evalSums(expr string, ctx *evalContext) (Value, error) {
 			s = i + 1
 			fill = false
 			neg = false
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1315,7 +1315,7 @@ func evalComps(expr string, ctx *evalContext) (Value, error) {
 			op = opch
 			i = i + opsz - 1
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1405,7 +1405,7 @@ func evalEquality(expr string, ctx *evalContext) (Value, error) {
 			op = opch
 			i = i + opsz - 1
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1448,7 +1448,7 @@ func evalBitwiseXOR(expr string, ctx *evalContext) (Value, error) {
 			}
 			op = expr[i]
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1491,7 +1491,7 @@ func evalBitwiseOR(expr string, ctx *evalContext) (Value, error) {
 			}
 			op = expr[i]
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1534,7 +1534,7 @@ func evalBitwiseAND(expr string, ctx *evalContext) (Value, error) {
 			}
 			op = expr[i]
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1586,7 +1586,7 @@ func evalLogicalAND(expr string, ctx *evalContext) (Value, error) {
 			op = expr[i]
 			i++
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1647,7 +1647,7 @@ func evalLogicalOR(expr string, ctx *evalContext) (Value, error) {
 			op = expr[i]
 			i++
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1689,7 +1689,7 @@ func evalTerns(expr string, ctx *evalContext) (Value, error) {
 				}
 				return evalExpr(right, ctx)
 			}
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1721,7 +1721,7 @@ func evalComma(expr string, ctx *evalContext) (Value, error) {
 				}
 			}
 			s = i + 1
-		case '(', '[', '{', '"', '\'', '`':
+		case '(', '[', '{', '"', '\'':
 			g, err := readGroup(expr[i:])
 			if err != nil {
 				return Undefined, err
@@ -1980,11 +1980,11 @@ func readGroup(data string) (string, error) {
 
 func squash(data string) (string, bool) {
 	// expects that the lead character is
-	//   '[' or '{' or '(' or '"' or '\'' or '`'
+	//   '[' or '{' or '(' or '"' or '\''
 	// squash the value, ignoring all nested arrays and objects.
 	var i, depth int
 	switch data[0] {
-	case '"', '\'', '`':
+	case '"', '\'':
 	default:
 		i, depth = 1, 1
 	}
@@ -1993,7 +1993,7 @@ func squash(data string) (string, bool) {
 			continue
 		}
 		switch data[i] {
-		case '"', '\'', '`':
+		case '"', '\'':
 			qch := data[i]
 			i++
 			s2 := i
