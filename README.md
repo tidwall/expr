@@ -8,10 +8,11 @@ Expression evaluator for Go
 
 - Operators: `+` `-` `*` `/` `%` `!` `<` `<=` `>` `>=` `==` `===` `!=` `!===` `?:` `??` `,` `[]` `()` `&` `|` `^`
 - Types: String, Number, Boolean, and custom types
-- Supports custom functions
+- Supports custom functions, types, associative arrays, and variables. 
 - Parenthesized expressions
 - Javascript-like syntax with automatic type conversions
 - Native uint64 and int64 types using the `u64` and `i64` suffix on number literals
+- Stateless: No variable assignments and no statements.
 
 ## Using
 
@@ -56,11 +57,11 @@ We can also provide some extra user data that exposes extra variables to the eva
 Example expressions:
 
 ```js
-timestamp
-timestamp - dur('1h')
+this.timestamp
+this.timestamp - dur('1h')
 now() + dur('24h')
-timestamp < now() - dur('24h') ? "old" : "new"
-((minX + maxX) / 2) + "," + ((minY + maxY) / 2)
+this.timestamp < now() - dur('24h') ? "old" : "new"
+((this.minX + this.maxX) / 2) + "," + ((this.minY + this.maxY) / 2)
 ```
 
 In Go, you would provide a custom `Extender` to the `Eval` function.
@@ -77,25 +78,28 @@ import (
 
 func main() {
 	// Create a user data map that can be referenced by the Eval function.
-	dict := make(map[string]expr.Value)
+	this := make(map[string]expr.Value)
 
 	// Add a bounding box to the user dictionary.
-	dict["minX"] = expr.Number(112.8192)
-	dict["minY"] = expr.Number(33.4738)
-	dict["maxX"] = expr.Number(113.9146)
-	dict["maxY"] = expr.Number(34.3367)
+	this["minX"] = expr.Number(112.8192)
+	this["minY"] = expr.Number(33.4738)
+	this["maxX"] = expr.Number(113.9146)
+	this["maxY"] = expr.Number(34.3367)
 
 	// Add a timestamp value to the user dictionary.
 	ts, _ := time.Parse(time.RFC3339, "2022-03-31T09:00:00Z")
-	dict["timestamp"] = expr.Object(ts)
+	this["timestamp"] = expr.Object(ts)
 
 	// Set up an evaluation extender for referencing the user data, and
 	// using functions and operators on custom types.
 	ext := expr.NewExtender(
 		func(info expr.RefInfo, ctx *expr.Context) (expr.Value, error) {
 			if info.Chain {
-				// Only use globals in this example.
-				// No chained objects like `user.name`.
+				// The reference is part of a dot chain such as:
+				//   this.minX
+				if this, ok := ctx.UserData.(map[string]expr.Value); ok {
+					return this[info.Ident], nil
+				}
 				return expr.Undefined, nil
 			}
 			switch info.Ident {
@@ -105,15 +109,11 @@ func main() {
 			case "dur":
 				// The `dur(str)` function
 				return expr.Function("duration"), nil
-			default:
-				// Check the user dictionary.
-				umap, ok := ctx.UserData.(map[string]expr.Value)
-				if !ok {
-					// value not found in
-					return expr.Undefined, nil
-				}
-				return umap[info.Ident], nil
+			case "this":
+				// The `this` UserData
+				return expr.Object(ctx.UserData), nil
 			}
+			return expr.Undefined, nil
 		},
 		func(info expr.CallInfo, ctx *expr.Context) (expr.Value, error) {
 			if info.Chain {
@@ -152,12 +152,6 @@ func main() {
 				switch info.Op {
 				case expr.OpLt:
 					return expr.Bool(left.Before(right)), nil
-				case expr.OpLte:
-					return expr.Bool(!right.After(left)), nil
-				case expr.OpGt:
-					return expr.Bool(left.After(right)), nil
-				case expr.OpGte:
-					return expr.Bool(!left.Before(right)), nil
 				}
 			} else if leftOK || rightOK {
 				// Either A or B are time.Time.
@@ -184,16 +178,16 @@ func main() {
 	)
 
 	// Set up a custom expr.context that holds user data and the extender.
-	ctx := expr.Context{UserData: dict, Extender: ext}
+	ctx := expr.Context{UserData: this, Extender: ext}
 
 	var res expr.Value
 
 	// Return the timestamp.
-	res, _ = expr.Eval(`timestamp`, &ctx)
+	res, _ = expr.Eval(`this.timestamp`, &ctx)
 	fmt.Println(res)
 
 	// Subtract an hour from the timestamp.
-	res, _ = expr.Eval(`timestamp - dur('1h')`, &ctx)
+	res, _ = expr.Eval(`this.timestamp - dur('1h')`, &ctx)
 	fmt.Println(res)
 
 	// Add one day to the current time.
@@ -201,11 +195,11 @@ func main() {
 	fmt.Println(res)
 
 	// See if timestamp is older than a day
-	res, _ = expr.Eval(`timestamp < now() - dur('24h') ? "old" : "new"`, &ctx)
+	res, _ = expr.Eval(`this.timestamp < now() - dur('24h') ? "old" : "new"`, &ctx)
 	fmt.Println(res)
 
 	// Get the center of the bounding box as a concatenated string.
-	res, _ = expr.Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &ctx)
+	res, _ = expr.Eval(`((this.minX + this.maxX) / 2) + "," + ((this.minY + this.maxY) / 2)`, &ctx)
 	fmt.Println(res)
 
 	// Output:

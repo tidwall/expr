@@ -973,25 +973,28 @@ func TestTypeOf(t *testing.T) {
 
 func TestReadme(t *testing.T) {
 	// Create a user data map that can be referenced by the Eval function.
-	dict := make(map[string]Value)
+	this := make(map[string]Value)
 
 	// Add a bounding box to the user dictionary.
-	dict["minX"] = Number(112.8192)
-	dict["minY"] = Number(33.4738)
-	dict["maxX"] = Number(113.9146)
-	dict["maxY"] = Number(34.3367)
+	this["minX"] = Number(112.8192)
+	this["minY"] = Number(33.4738)
+	this["maxX"] = Number(113.9146)
+	this["maxY"] = Number(34.3367)
 
 	// Add a timestamp value to the user dictionary.
 	ts, _ := time.Parse(time.RFC3339, "2022-03-31T09:00:00Z")
-	dict["timestamp"] = Object(ts)
+	this["timestamp"] = Object(ts)
 
 	// Set up an evaluation extender for referencing the user data, and
 	// using functions and operators on custom types.
 	ext := NewExtender(
 		func(info RefInfo, ctx *Context) (Value, error) {
 			if info.Chain {
-				// Only use globals in this example.
-				// No chained objects like `user.name`.
+				// The reference is part of a dot chain such as:
+				//   this.minX
+				if this, ok := ctx.UserData.(map[string]Value); ok {
+					return this[info.Ident], nil
+				}
 				return Undefined, nil
 			}
 			switch info.Ident {
@@ -1001,15 +1004,11 @@ func TestReadme(t *testing.T) {
 			case "dur":
 				// The `dur(str)` function
 				return Function("duration"), nil
-			default:
-				// Check the user dictionary.
-				umap, ok := ctx.UserData.(map[string]Value)
-				if !ok {
-					// value not found in
-					return Undefined, nil
-				}
-				return umap[info.Ident], nil
+			case "this":
+				// The `this` UserData
+				return Object(ctx.UserData), nil
 			}
+			return Undefined, nil
 		},
 		func(info CallInfo, ctx *Context) (Value, error) {
 			if info.Chain {
@@ -1074,16 +1073,16 @@ func TestReadme(t *testing.T) {
 	)
 
 	// Set up a custom context that holds user data and the extender.
-	ctx := Context{UserData: dict, Extender: ext}
+	ctx := Context{UserData: this, Extender: ext}
 
 	var res Value
 
 	// Return the timestamp.
-	res, _ = Eval(`timestamp`, &ctx)
+	res, _ = Eval(`this.timestamp`, &ctx)
 	fmt.Println(res)
 
 	// Subtract an hour from the timestamp.
-	res, _ = Eval(`timestamp - dur('1h')`, &ctx)
+	res, _ = Eval(`this.timestamp - dur('1h')`, &ctx)
 	fmt.Println(res)
 
 	// Add one day to the current time.
@@ -1091,11 +1090,11 @@ func TestReadme(t *testing.T) {
 	fmt.Println(res)
 
 	// See if timestamp is older than a day
-	res, _ = Eval(`timestamp < now() - dur('24h') ? "old" : "new"`, &ctx)
+	res, _ = Eval(`this.timestamp < now() - dur('24h') ? "old" : "new"`, &ctx)
 	fmt.Println(res)
 
 	// Get the center of the bounding box as a concatenated string.
-	res, _ = Eval(`((minX + maxX) / 2) + "," + ((minY + maxY) / 2)`, &ctx)
+	res, _ = Eval(`((this.minX + this.maxX) / 2) + "," + ((this.minY + this.maxY) / 2)`, &ctx)
 	fmt.Println(res)
 
 	// Output:
