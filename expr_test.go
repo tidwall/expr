@@ -381,10 +381,6 @@ func simpleExtendorOptions(
 	return Context{UserData: udata, Extender: NewExtender(ref, call, op)}
 }
 
-type fnValue struct {
-	name string
-}
-
 func TestEvalTable(t *testing.T) {
 	testOptions := simpleExtendorOptions(nil,
 		func(info RefInfo, _ *Context) (Value, error) {
@@ -853,7 +849,7 @@ func TestEvalForEach(t *testing.T) {
 	}
 
 	vals = nil
-	res, err = EvalForEach(`1,2,3,4`, func(value Value) error {
+	_, err = EvalForEach(`1,2,3,4`, func(value Value) error {
 		vals = append(vals, int(value.Int64()))
 		if len(vals) == 3 {
 			return errors.New("fail")
@@ -864,7 +860,7 @@ func TestEvalForEach(t *testing.T) {
 		t.Fatal()
 	}
 	vals = nil
-	res, err = EvalForEach(`1,2,3,4`, func(value Value) error {
+	_, err = EvalForEach(`1,2,3,4`, func(value Value) error {
 		vals = append(vals, int(value.Int64()))
 		if len(vals) == 4 {
 			return errors.New("fail")
@@ -1103,4 +1099,48 @@ func TestReadme(t *testing.T) {
 	// 2022-04-02 06:00:40.834656 -0700 MST m=+86400.000714835
 	// old
 	// 113.36689999999999,33.905249999999995
+}
+
+func TestEvalCaseInsensitive(t *testing.T) {
+	var res Value
+	res, _ = Eval(`"Hello" == "hello"`, &Context{NoCase: false})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"Hello" == "hello"`, &Context{NoCase: true})
+	if !res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"Hello" < "hello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"Hello" > "hello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"hello" > "Hello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"Jello" == "Hello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"Jello" == "hello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"Hello" == "jello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"jello" == "Hello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
+	res, _ = Eval(`"jello" == "hello"`, &Context{NoCase: true})
+	if res.Bool() {
+		t.Fatal()
+	}
 }

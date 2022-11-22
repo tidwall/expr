@@ -14,6 +14,8 @@ import (
 	"unicode/utf8"
 )
 
+//lint:file-ignore ST1005 Errors allow for capitalization to match Javascript.
+
 func errUndefined(ident string, chain bool) error {
 	var err error
 	if chain {
@@ -369,6 +371,43 @@ func (a Value) mod(b Value, ctx *evalContext) (Value, error) {
 	return Value{kind: floatKind, floatVal: math.Mod(a.floatVal, b.floatVal)}, nil
 }
 
+func stringLessInsensitive(a, b string) bool {
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] >= 'A' && a[i] <= 'Z' {
+			if b[i] >= 'A' && b[i] <= 'Z' {
+				// both are uppercase, do nothing
+				if a[i] < b[i] {
+					return true
+				} else if a[i] > b[i] {
+					return false
+				}
+			} else {
+				// a is uppercase, convert a to lowercase
+				if a[i]+32 < b[i] {
+					return true
+				} else if a[i]+32 > b[i] {
+					return false
+				}
+			}
+		} else if b[i] >= 'A' && b[i] <= 'Z' {
+			// b is uppercase, convert b to lowercase
+			if a[i] < b[i]+32 {
+				return true
+			} else if a[i] > b[i]+32 {
+				return false
+			}
+		} else {
+			// neither are uppercase
+			if a[i] < b[i] {
+				return true
+			} else if a[i] > b[i] {
+				return false
+			}
+		}
+	}
+	return len(a) < len(b)
+}
+
 func (a Value) lt(b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpLt, a, b, ctx)
@@ -382,7 +421,13 @@ func (a Value) lt(b Value, ctx *evalContext) (Value, error) {
 		case uintKind:
 			return Value{kind: boolKind, boolVal: a.uintVal < b.uintVal}, nil
 		case strKind:
-			return Value{kind: boolKind, boolVal: a.strVal < b.strVal}, nil
+			var less bool
+			if ctx != nil && ctx.base != nil && ctx.base.NoCase {
+				less = stringLessInsensitive(a.strVal, b.strVal)
+			} else {
+				less = a.strVal < b.strVal
+			}
+			return Value{kind: boolKind, boolVal: less}, nil
 		}
 	}
 	a, b = a.tofval(), b.tofval()
@@ -520,8 +565,9 @@ func (a Value) tostr() Value {
 	case objKind:
 		if v, ok := a.objVal.(stringer); ok {
 			s = v.String()
+		} else {
+			s = fmt.Sprint(a.objVal)
 		}
-		s = fmt.Sprint(a.objVal)
 	default:
 		s = "undefined"
 	}
@@ -632,8 +678,7 @@ func (a Value) Uint64() uint64 {
 
 // Value returns the native Go representation, which is one of the following:
 //
-//    bool, int64, uint64, float64, string, or nil (if undefined)
-//
+//	bool, int64, uint64, float64, string, or nil (if undefined)
 func (a Value) Value() interface{} {
 	switch a.kind {
 	case objKind:
@@ -1842,6 +1887,7 @@ type Extender interface {
 type Context struct {
 	UserData any
 	Extender Extender
+	NoCase   bool // Disable case insensitive string comparisons
 }
 
 // NewExtender is a convenience function for creating a simple extender using
