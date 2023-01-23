@@ -1,5 +1,3 @@
 module github.com/tidwall/expr
 
-go 1.19
-
-require github.com/tidwall/box v0.1.3
+go 1.18

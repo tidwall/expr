@@ -1144,27 +1144,3 @@ func TestEvalCaseInsensitive(t *testing.T) {
 		t.Fatal()
 	}
 }
-
-func BenchmarkSimpleMath(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		val, err := Eval("1 + 1", nil)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if val.Int64() != 2 {
-			b.Fatalf("expected %d, got %d", 2, val.Int64())
-		}
-	}
-}
-
-func BenchmarkCompareStrings(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		val, err := Eval("'hello' == 'hello'", nil)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if !val.Bool() {
-			b.Fatalf("expected %t, got %t", true, val.Bool())
-		}
-	}
-}
