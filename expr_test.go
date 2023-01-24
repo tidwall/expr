@@ -15,7 +15,6 @@ import (
 )
 
 var testTable = []string{
-	// (`BREAK`),
 	(`.1`), (`0.1`),
 	(`.1e-1`), (`0.01`),
 	(`.1e-1 + 5`), (`5.01`),
@@ -888,6 +887,7 @@ func TestParseString(t *testing.T) {
 }
 
 func BenchmarkSimpleFact(b *testing.B) {
+	// b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		Eval("5 * 10", nil)
 	}
@@ -1142,5 +1142,29 @@ func TestEvalCaseInsensitive(t *testing.T) {
 	res, _ = Eval(`"jello" == "hello"`, &Context{NoCase: true})
 	if res.Bool() {
 		t.Fatal()
+	}
+}
+
+func BenchmarkSimpleMath(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		val, err := Eval("1 + 1", nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if val.Int64() != 2 {
+			b.Fatalf("expected %d, got %d", 2, val.Int64())
+		}
+	}
+}
+
+func BenchmarkCompareStrings(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		val, err := Eval("'hello' == 'hello'", nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if !val.Bool() {
+			b.Fatalf("expected %t, got %t", true, val.Bool())
+		}
 	}
 }
