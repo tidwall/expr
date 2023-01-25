@@ -208,8 +208,15 @@ func evalAtom(expr string, ctx *evalContext) (Value, error) {
 			}
 			leftReady = true
 			expr = expr[len(g):]
+		} else if g[0] == '[' {
+			left, err = multiExprsToArray(g[1:len(g)-1], ctx)
+			if err != nil {
+				return Undefined, err
+			}
+			leftReady = true
+			expr = expr[len(g):]
 		} else {
-			// '{', '[' not currently allowed as a leading value
+			// '{' not currently allowed as a leading value
 			// Perhaps in the future.
 			return Undefined, errSyntax()
 		}
@@ -305,8 +312,12 @@ func evalAtom(expr string, ctx *evalContext) (Value, error) {
 					var info CallInfo
 					info.Chain = hasLeftLeft
 					info.Value = leftLeft
-					info.Ident = left.asString()
-					info.Args = Args{expr: g[1 : len(g)-1], ctx: ctx.base}
+					info.Ident = left.funcIdent()
+					args, err := multiExprsToArray(g[1:len(g)-1], ctx)
+					if err != nil {
+						return Undefined, err
+					}
+					info.Args = args
 					val, err = ctx.base.Extender.Call(info, ctx.base)
 					if err != nil {
 						return Undefined, errCall(err)
@@ -339,38 +350,16 @@ func evalAtom(expr string, ctx *evalContext) (Value, error) {
 	return left, nil
 }
 
-type ComputedArgs struct {
-	values []Value
-}
-
-func (args *ComputedArgs) Get(index int) Value {
-	if index < 0 || index >= len(args.values) {
-		return Undefined
-	}
-	return args.values[index]
-}
-
-func (args *ComputedArgs) Len() int {
-	return len(args.values)
-}
-
-type Args struct {
-	expr string
-	ctx  *Context
-}
-
-func (args *Args) Compute() (ComputedArgs, error) {
-	var values []Value
-	err := args.ForEachValue(func(value Value) error {
-		values = append(values, value)
+func multiExprsToArray(expr string, ctx *evalContext) (Value, error) {
+	var arr []Value
+	_, err := EvalForEach(expr, func(value Value) error {
+		arr = append(arr, value)
 		return nil
-	})
-	return ComputedArgs{values}, err
-}
-
-func (args *Args) ForEachValue(iter func(value Value) error) error {
-	_, err := EvalForEach(args.expr, iter, args.ctx)
-	return err
+	}, ctx.base)
+	if err != nil {
+		return Undefined, err
+	}
+	return Array(arr), nil
 }
 
 func getRefValue(chain bool, left Value, ident string, optChain bool,
@@ -1308,7 +1297,7 @@ type CallInfo struct {
 	Chain bool
 	Value Value
 	Ident string
-	Args  Args
+	Args  Value
 }
 
 type Extender interface {
@@ -1561,6 +1550,7 @@ const (
 	strKind               // string
 	funcKind              // function
 	objKind               // custom object
+	arrKind               // array kind
 )
 
 // Value represents is the return value of Eval.
@@ -1670,6 +1660,8 @@ func (a Value) toFloat64() float64 {
 		return conv.Atof(a.asString())
 	case objKind:
 		return conv.Vtof(a.asObject())
+	case arrKind:
+		return conv.Atof(a.toString())
 	}
 	// everything else NaN
 	return math.NaN()
@@ -1711,6 +1703,8 @@ func (a Value) toInt64() int64 {
 		return conv.Atoi(a.asString())
 	case objKind:
 		return conv.Vtoi(a.asObject())
+	case arrKind:
+		return conv.Atoi(a.toString())
 	}
 	// everything else zero
 	return 0
@@ -1752,6 +1746,8 @@ func (a Value) toUint64() uint64 {
 		return conv.Atou(a.asString())
 	case objKind:
 		return conv.Vtou(a.asObject())
+	case arrKind:
+		return conv.Atou(a.toString())
 	}
 	// everything else zero
 	return 0
@@ -1808,6 +1804,16 @@ func (a Value) toString() string {
 		return "[Function: " + a.asString() + "]"
 	case objKind:
 		return conv.Vtoa(a.asObject())
+	case arrKind:
+		vals := a.asArray()
+		var str []byte
+		for i := 0; i < len(vals); i++ {
+			if i > 0 {
+				str = append(str, ',')
+			}
+			str = append(str, vals[i].String()...)
+		}
+		return string(str)
 	}
 	// everything else undefined
 	return "undefined"
@@ -1851,6 +1857,8 @@ func (a Value) Object() any {
 		return conv.Atov(a.asString())
 	case objKind:
 		return a.asObject()
+	case arrKind:
+		return a.asArray()
 	}
 	// everything else nil
 	return nil
@@ -1862,11 +1870,92 @@ func (a Value) Value() any {
 	return a.Object()
 }
 
+///////////////////////////////////////////
+// Array
+///////////////////////////////////////////
+
+type aface struct {
+	ptr unsafe.Pointer
+	len int
+	cap int
+}
+
+func Array(values []Value) Value {
+	return Value{
+		kind: arrKind,
+		bits: uint64((*aface)(unsafe.Pointer(&values)).len),
+		data: (*aface)(unsafe.Pointer(&values)).ptr,
+	}
+}
+
+func (a Value) asArray() []Value {
+	return *(*[]Value)(unsafe.Pointer(&aface{
+		ptr: a.data,
+		len: int(a.bits),
+		cap: int(a.bits),
+	}))
+}
+
+func (a Value) Array() []Value {
+	if a.kind == arrKind {
+		return a.asArray()
+	}
+	return a.toArray()
+}
+
+func (a Value) toArray() []Value {
+	if a.kind == arrKind {
+		return a.asArray()
+	}
+	return nil
+}
+
+// At returns a value from an array at index.
+// Returns 'undefined' if the value is not an array or the index is
+// outside of the bounds.
+func (a Value) At(i int) Value {
+	if a.kind == arrKind {
+		arr := a.asArray()
+		if i >= 0 && i < len(arr) {
+			return arr[i]
+		}
+	}
+	return Undefined
+}
+
+// Len return the length of a String or Array.
+// Returns zero other types.
+func (a Value) Len() int {
+	if a.kind == strKind {
+		return len(a.asString())
+	}
+	if a.kind == arrKind {
+		return len(a.asArray())
+	}
+	return 0
+}
+
+// IsArray returns true if the value is an 'Array'
+func (a Value) IsArray() bool {
+	return a.kind == arrKind
+}
+
+///////////////////////////////////////////
+// Function
+///////////////////////////////////////////
+
 // Function
 func Function(name string) Value {
 	v := String(name)
 	v.kind = funcKind
 	return v
+}
+
+func (a Value) funcIdent() string {
+	if a.kind == funcKind {
+		return a.asString()
+	}
+	return ""
 }
 
 // Number returns a float64 value.

@@ -126,13 +126,8 @@ func main() {
 				// Return the current date/time.
 				return expr.Object(time.Now()), nil
 			case "dur":
-				// Compute the arguments.
-				args, err := info.Args.Compute()
-				if err != nil {
-					return expr.Undefined, err
-				}
 				// Parse the duration using the first argument.
-				d, err := time.ParseDuration(args.Get(0).String())
+				d, err := time.ParseDuration(info.Args.At(0).String())
 				if err != nil {
 					return expr.Undefined, err
 				}

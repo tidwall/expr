@@ -15,6 +15,7 @@ import (
 )
 
 var testTable = []string{
+	// (`BREAK`),
 	(`.1`), (`0.1`),
 	(`.1e-1`), (`0.01`),
 	(`.1e-1 + 5`), (`5.01`),
@@ -141,7 +142,7 @@ var testTable = []string{
 	(`NaN * 1`), (`NaN`),
 	(`0.24ab31 - 1`), (`SyntaxError`),
 	(`0 + {1}`), (`SyntaxError`),
-	(`0 + [1]`), (`SyntaxError`),
+	(`0 + [1]`), (`01`),
 	(`hello + 2`), (`ReferenceError: hello is not defined`),
 	(`i64("-9223372036854775808")`), (`-9223372036854775808`),
 	(`-9223372036854775808i64`), (`-9223372036854775808`),
@@ -369,6 +370,11 @@ var testTable = []string{
 	(`true.hello == '11'`), (`false`),
 	(`true.hello == null`), (`false`),
 	(`null == null`), (`true`),
+	(`[1,2,(3,4,'a','b'),3,1==2,3.5+4.5]`), (`1,2,b,3,false,8`),
+	(`11*1`), (`11`),
+	(`11*2`), (`22`),
+	(`[11]*2`), (`22`),
+	(`[11,22]*2`), (`NaN`),
 }
 
 func simpleExtendorOptions(
@@ -411,36 +417,33 @@ func TestEvalTable(t *testing.T) {
 			return Undefined, nil
 		},
 		func(info CallInfo, ctx *Context) (Value, error) {
-			args, err := info.Args.Compute()
-			if err != nil {
-				return Undefined, err
-			}
 			switch info.Ident {
 			case "i64":
-				x, _ := strconv.ParseInt(args.Get(0).String(), 10, 64)
+				x, _ := strconv.ParseInt(info.Args.At(0).String(), 10, 64)
 				return Int64(x), nil
 			case "u64":
-				x, _ := strconv.ParseUint(args.Get(0).String(), 10, 64)
+				x, _ := strconv.ParseUint(info.Args.At(0).String(), 10, 64)
 				return Uint64(x), nil
 			case "cust":
-				x, err := strconv.ParseInt(args.Get(0).String(), 10, 64)
+				x, err := strconv.ParseInt(info.Args.At(0).String(), 10, 64)
 				if err != nil {
 					return Undefined, err
 				}
 				return Object(x), nil
 			case "myfn1":
-				if args.Get(0).String() == "9999" {
+				if info.Args.At(0).String() == "9999" {
 					return Undefined, errors.New("fantastic")
 				}
 				return info.Value, nil
 			case "myfn2":
 				var sum float64
-				for i := 0; i < args.Len(); i++ {
-					sum += args.Get(i).Float64()
+				for i := 0; i < info.Args.Len(); i++ {
+					sum += info.Args.At(i).Float64()
 				}
 				return Float64(sum), nil
 			case "numobj":
-				return Object(args.Get(0).Float64()), nil
+
+				return Object(info.Args.At(0).Float64()), nil
 			}
 			return Undefined, nil
 		},
@@ -697,13 +700,6 @@ func (t thing) String() string {
 	return strconv.FormatFloat(float64(t), 'f', -1, 64)
 }
 
-func TestComputedArgs(t *testing.T) {
-	var cargs ComputedArgs
-	if cargs.Get(0) != Undefined {
-		t.Fatal()
-	}
-}
-
 func TestComputedForEachEval(t *testing.T) {
 	var vals []Value
 	ctx := simpleExtendorOptions(1,
@@ -714,19 +710,14 @@ func TestComputedForEachEval(t *testing.T) {
 			return Undefined, nil
 		},
 		func(info CallInfo, ctx *Context) (Value, error) {
-			args, err := info.Args.Compute()
-			if err != nil {
-				return Undefined, err
-			}
-			for i := 0; i < args.Len(); i++ {
-				vals = append(vals, args.Get(i))
+			for i := 0; i < info.Args.Len(); i++ {
+				vals = append(vals, info.Args.At(i))
 			}
 			return Undefined, nil
 		}, nil)
 
 	val, err := Eval("a(1,('a','b','c'),3,4)", &ctx)
 	if err != nil {
-		// println(1)
 		t.Fatal(err)
 	}
 	if !val.IsUndefined() {
@@ -1056,13 +1047,8 @@ func TestReadme(t *testing.T) {
 				// Return the current date/time.
 				return Object(time.Now()), nil
 			case "dur":
-				// Compute the arguments.
-				args, err := info.Args.Compute()
-				if err != nil {
-					return Undefined, err
-				}
 				// Parse the duration using the first argument.
-				d, err := time.ParseDuration(args.Get(0).String())
+				d, err := time.ParseDuration(info.Args.At(0).String())
 				if err != nil {
 					return Undefined, err
 				}
