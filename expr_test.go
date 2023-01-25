@@ -887,13 +887,14 @@ func TestParseString(t *testing.T) {
 }
 
 func BenchmarkSimpleFact(b *testing.B) {
-	// b.ReportAllocs()
+	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		Eval("5 * 10", nil)
 	}
 }
 
 func BenchmarkSimpleFactRef(b *testing.B) {
+	b.ReportAllocs()
 	opts := simpleExtendorOptions(nil,
 		func(info RefInfo, ctx *Context) (Value, error) {
 			if info.Ident == "ten" {
@@ -908,12 +909,14 @@ func BenchmarkSimpleFactRef(b *testing.B) {
 }
 
 func BenchmarkSimpleComp(b *testing.B) {
+	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		Eval("5 < 10", nil)
 	}
 }
 
 func BenchmarkSimpleCompRef(b *testing.B) {
+	b.ReportAllocs()
 	opts := simpleExtendorOptions(nil,
 		func(info RefInfo, ctx *Context) (Value, error) {
 			if info.Ident == "ten" {
@@ -1146,6 +1149,7 @@ func TestEvalCaseInsensitive(t *testing.T) {
 }
 
 func BenchmarkSimpleMath(b *testing.B) {
+	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		val, err := Eval("1 + 1", nil)
 		if err != nil {
@@ -1158,6 +1162,7 @@ func BenchmarkSimpleMath(b *testing.B) {
 }
 
 func BenchmarkCompareStrings(b *testing.B) {
+	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		val, err := Eval("'hello' == 'hello'", nil)
 		if err != nil {
