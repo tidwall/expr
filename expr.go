@@ -112,6 +112,36 @@ func closech(open byte) byte {
 	return open
 }
 
+func parseFloat(s string) (n float64, ok bool) {
+	var i int
+	var sign bool
+	if len(s) > 15 {
+		// Large numeric strings should be put through the built in converter.
+		goto notInt
+	}
+	if len(s) > 0 && s[0] == '-' {
+		sign = true
+		i++
+	}
+	if i == len(s) {
+		goto notInt
+	}
+	for ; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			n = n*10 + float64(s[i]-'0')
+		} else {
+			goto notInt
+		}
+	}
+	if sign {
+		return n * -1, true
+	}
+	return n, true
+notInt:
+	f, err := strconv.ParseFloat(s, 64)
+	return f, err == nil
+}
+
 func evalAtom(expr string, ctx *evalContext) (Value, error) {
 	expr = trim(expr)
 	if len(expr) == 0 {
@@ -150,8 +180,8 @@ func evalAtom(expr string, ctx *evalContext) (Value, error) {
 				return Int64(x), nil
 			}
 		}
-		x, err := strconv.ParseFloat(expr, 64)
-		if err != nil {
+		x, ok := parseFloat(expr)
+		if !ok {
 			return Undefined, errSyntax()
 		}
 		return Float64(x), nil
