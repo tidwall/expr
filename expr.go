@@ -1184,10 +1184,13 @@ func evalTerns(expr string, ctx *evalContext) (Value, error) {
 
 func evalComma(expr string, ctx *evalContext) (Value, error) {
 	var s int
+	iter := ctx.iter
 	for i := 0; i < len(expr); i++ {
 		switch expr[i] {
 		case ',':
+			ctx.iter = nil // disable the iter
 			res, err := evalAuto(stepComma<<1, expr[s:i], ctx)
+			ctx.iter = iter // enable the iter
 			if err != nil {
 				return Undefined, err
 			}
@@ -1566,6 +1569,16 @@ type Value struct {
 	bits  uint64         // all number types and string length
 	rtype unsafe.Pointer // interface type pointer
 	data  unsafe.Pointer // interface data pointer and string data pointer
+}
+
+// IsUndefined returns true if the value is 'undefined'
+func (a Value) IsUndefined() bool {
+	return a.kind == undefKind
+}
+
+// IsNull returns true if the value is 'null'
+func (a Value) IsNull() bool {
+	return a.kind == nullKind
 }
 
 ///////////////////////////////////////////

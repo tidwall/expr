@@ -704,6 +704,42 @@ func TestComputedArgs(t *testing.T) {
 	}
 }
 
+func TestComputedForEachEval(t *testing.T) {
+	var vals []Value
+	ctx := simpleExtendorOptions(1,
+		func(info RefInfo, ctx *Context) (Value, error) {
+			if info.Ident == "a" {
+				return Function("a"), nil
+			}
+			return Undefined, nil
+		},
+		func(info CallInfo, ctx *Context) (Value, error) {
+			args, err := info.Args.Compute()
+			if err != nil {
+				return Undefined, err
+			}
+			for i := 0; i < args.Len(); i++ {
+				vals = append(vals, args.Get(i))
+			}
+			return Undefined, nil
+		}, nil)
+
+	val, err := Eval("a(1,('a','b','c'),3,4)", &ctx)
+	if err != nil {
+		// println(1)
+		t.Fatal(err)
+	}
+	if !val.IsUndefined() {
+		t.Fatal("expected undefined")
+	}
+	if len(vals) != 4 {
+		t.Fatalf("expected 4, got %d", len(vals))
+	}
+	if fmt.Sprintf("%s", vals) != "[1 c 3 4]" {
+		t.Fatalf("expected '[1 c 3 4]', got '%s'", vals)
+	}
+}
+
 func TestEvalBitwiseVarious(t *testing.T) {
 	// check that parital groups and missing left part returns errors
 	if _, err := evalBitwiseAND(` 100 & (100`, &evalContext{}); err == nil {
