@@ -619,11 +619,11 @@ func fact(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '*':
-		return left.mul(right, ctx)
+		return mul(left, right, ctx)
 	case '/':
-		return left.div(right, ctx)
+		return div(left, right, ctx)
 	case '%':
-		return left.mod(right, ctx)
+		return mod(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -668,16 +668,16 @@ func sum(left Value, op byte, expr string, neg, end bool,
 	}
 	if neg {
 		// make right negative
-		right, err = right.mul(Float64(-1), ctx)
+		right, err = mul(right, Float64(-1), ctx)
 		if err != nil {
 			return Undefined, err
 		}
 	}
 	switch op {
 	case '+':
-		return left.add(right, ctx)
+		return add(left, right, ctx)
 	case '-':
-		return left.sub(right, ctx)
+		return sub(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -759,13 +759,13 @@ func comp(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '<':
-		return left.lt(right, ctx)
+		return lt(left, right, ctx)
 	case '<' + 32:
-		return left.lte(right, ctx)
+		return lte(left, right, ctx)
 	case '>':
-		return left.gt(right, ctx)
+		return gt(left, right, ctx)
 	case '>' + 32:
-		return left.gte(right, ctx)
+		return gte(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -835,13 +835,13 @@ func equal(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '=':
-		return left.eq(right, ctx)
+		return eq(left, right, ctx)
 	case '!':
-		return left.neq(right, ctx)
+		return neq(left, right, ctx)
 	case '=' + 32:
-		return left.seq(right, ctx)
+		return seq(left, right, ctx)
 	case '!' + 32:
-		return left.sneq(right, ctx)
+		return sneq(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -907,7 +907,7 @@ func bitwiseXOR(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '^':
-		return left.xor(right, ctx)
+		return xor(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -950,7 +950,7 @@ func bitwiseOR(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '|':
-		return left.bor(right, ctx)
+		return bor(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -993,7 +993,7 @@ func bitwiseAND(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '&':
-		return left.band(right, ctx)
+		return band(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -1036,7 +1036,7 @@ func logicalAND(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '&':
-		return left.and(right, ctx)
+		return and(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -1088,9 +1088,9 @@ func logicalOR(left Value, op byte, expr string, ctx *evalContext,
 	}
 	switch op {
 	case '|':
-		return left.or(right, ctx)
+		return or(left, right, ctx)
 	case '?':
-		return left.coalesce(right, ctx)
+		return coalesce(left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -1895,7 +1895,7 @@ func doOp(op Op, a, b Value, ctx *evalContext) (Value, error) {
 	return Undefined, errOperator(errors.New("undefined "))
 }
 
-func (a Value) add(b Value, ctx *evalContext) (Value, error) {
+func add(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpAdd, a, b, ctx)
 	}
@@ -1926,7 +1926,7 @@ func (a Value) isnum() bool {
 	return false
 }
 
-func (a Value) bor(b Value, ctx *evalContext) (Value, error) {
+func bor(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitOr, a, b, ctx)
 	}
@@ -1940,7 +1940,7 @@ func (a Value) bor(b Value, ctx *evalContext) (Value, error) {
 	}
 	return Float64(conv.Itof(a.Int64() | b.Int64())), nil
 }
-func (a Value) band(b Value, ctx *evalContext) (Value, error) {
+func band(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitAnd, a, b, ctx)
 	}
@@ -1954,7 +1954,7 @@ func (a Value) band(b Value, ctx *evalContext) (Value, error) {
 	}
 	return Float64(conv.Itof(a.Int64() & b.Int64())), nil
 }
-func (a Value) xor(b Value, ctx *evalContext) (Value, error) {
+func xor(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitXor, a, b, ctx)
 	}
@@ -1969,7 +1969,7 @@ func (a Value) xor(b Value, ctx *evalContext) (Value, error) {
 	return Float64(conv.Itof(a.Int64() ^ b.Int64())), nil
 }
 
-func (a Value) sub(b Value, ctx *evalContext) (Value, error) {
+func sub(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpSub, a, b, ctx)
 	}
@@ -1986,7 +1986,7 @@ func (a Value) sub(b Value, ctx *evalContext) (Value, error) {
 	return Float64(a.Float64() - b.Float64()), nil
 }
 
-func (a Value) mul(b Value, ctx *evalContext) (Value, error) {
+func mul(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpMul, a, b, ctx)
 	}
@@ -2003,7 +2003,7 @@ func (a Value) mul(b Value, ctx *evalContext) (Value, error) {
 	return Float64(a.Float64() * b.Float64()), nil
 }
 
-func (a Value) div(b Value, ctx *evalContext) (Value, error) {
+func div(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpDiv, a, b, ctx)
 	}
@@ -2025,7 +2025,7 @@ func (a Value) div(b Value, ctx *evalContext) (Value, error) {
 	}
 	return Float64(a.Float64() / b.Float64()), nil
 }
-func (a Value) mod(b Value, ctx *evalContext) (Value, error) {
+func mod(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpMod, a, b, ctx)
 	}
@@ -2083,7 +2083,7 @@ func stringLessInsensitive(a, b string) bool {
 	return len(a) < len(b)
 }
 
-func (a Value) lt(b Value, ctx *evalContext) (Value, error) {
+func lt(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpLt, a, b, ctx)
 	}
@@ -2108,96 +2108,96 @@ func (a Value) lt(b Value, ctx *evalContext) (Value, error) {
 	return Bool(a.Float64() < b.Float64()), nil
 }
 
-func (a Value) lte(b Value, ctx *evalContext) (Value, error) {
-	t, err := a.lt(b, ctx)
+func lte(a, b Value, ctx *evalContext) (Value, error) {
+	t, err := lt(a, b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	if t.Bool() {
 		return t, nil
 	}
-	t, err = b.lt(a, ctx)
+	t, err = lt(b, a, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) gt(b Value, ctx *evalContext) (Value, error) {
-	return b.lt(a, ctx)
+func gt(a, b Value, ctx *evalContext) (Value, error) {
+	return lt(b, a, ctx)
 }
 
-func (a Value) gte(b Value, ctx *evalContext) (Value, error) {
-	t, err := a.gt(b, ctx)
+func gte(a, b Value, ctx *evalContext) (Value, error) {
+	t, err := gt(a, b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	if t.Bool() {
 		return t, nil
 	}
-	t, err = b.gt(a, ctx)
+	t, err = gt(b, a, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) eq(b Value, ctx *evalContext) (Value, error) {
+func eq(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind != b.kind && a.kind != objKind && b.kind != objKind {
 		return Bool(a.Float64() == b.Float64()), nil // MARK: float equality
 	}
-	t, err := a.lt(b, ctx)
+	t, err := lt(a, b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	if t.Bool() {
 		return Bool(false), nil
 	}
-	t, err = b.lt(a, ctx)
+	t, err = lt(b, a, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!t.Bool()), nil
 }
 
-func (a Value) seq(b Value, ctx *evalContext) (Value, error) {
+func seq(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == b.kind {
-		return a.eq(b, ctx)
+		return eq(a, b, ctx)
 	}
 	return Bool(false), nil
 }
 
-func (a Value) neq(b Value, ctx *evalContext) (Value, error) {
-	val, err := a.eq(b, ctx)
+func neq(a, b Value, ctx *evalContext) (Value, error) {
+	val, err := eq(a, b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!val.Bool()), nil
 }
 
-func (a Value) sneq(b Value, ctx *evalContext) (Value, error) {
-	val, err := a.seq(b, ctx)
+func sneq(a, b Value, ctx *evalContext) (Value, error) {
+	val, err := seq(a, b, ctx)
 	if err != nil {
 		return Undefined, err
 	}
 	return Bool(!val.Bool()), nil
 }
 
-func (a Value) and(b Value, ctx *evalContext) (Value, error) {
+func and(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpAnd, a, b, ctx)
 	}
 	return Bool(a.Bool() && b.Bool()), nil
 }
 
-func (a Value) or(b Value, ctx *evalContext) (Value, error) {
+func or(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpOr, a, b, ctx)
 	}
 	return Bool(a.Bool() || b.Bool()), nil
 }
 
-func (a Value) coalesce(b Value, ctx *evalContext) (Value, error) {
+func coalesce(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpCoal, a, b, ctx)
 	}
