@@ -87,6 +87,7 @@ const (
 	OpDiv    Op = "/"
 	OpMod    Op = "%"
 	OpLt     Op = "<"
+	OpEq     Op = "=="
 	OpStEq   Op = "==="
 	OpAnd    Op = "&&"
 	OpOr     Op = "||"
@@ -2148,41 +2149,35 @@ func mod(a, b Value, ctx *evalContext) (Value, error) {
 	return Float64(math.Mod(a.Float64(), b.Float64())), nil
 }
 
+func tolower(c byte) byte {
+	if c >= 'A' && c <= 'Z' {
+		return c + 32
+	}
+	return c
+}
+
 func stringLessInsensitive(a, b string) bool {
 	for i := 0; i < len(a) && i < len(b); i++ {
-		if a[i] >= 'A' && a[i] <= 'Z' {
-			if b[i] >= 'A' && b[i] <= 'Z' {
-				// both are uppercase, do nothing
-				if a[i] < b[i] {
-					return true
-				} else if a[i] > b[i] {
-					return false
-				}
-			} else {
-				// a is uppercase, convert a to lowercase
-				if a[i]+32 < b[i] {
-					return true
-				} else if a[i]+32 > b[i] {
-					return false
-				}
-			}
-		} else if b[i] >= 'A' && b[i] <= 'Z' {
-			// b is uppercase, convert b to lowercase
-			if a[i] < b[i]+32 {
-				return true
-			} else if a[i] > b[i]+32 {
-				return false
-			}
-		} else {
-			// neither are uppercase
-			if a[i] < b[i] {
-				return true
-			} else if a[i] > b[i] {
-				return false
-			}
+		ca, cb := tolower(a[i]), tolower(b[i])
+		if ca < cb {
+			return true
+		} else if ca > cb {
+			return false
 		}
 	}
 	return len(a) < len(b)
+}
+
+func stringEqualInsensitive(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if tolower(a[i]) != tolower(b[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func lt(a, b Value, ctx *evalContext) (Value, error) {
@@ -2218,11 +2213,7 @@ func lte(a, b Value, ctx *evalContext) (Value, error) {
 	if t.Bool() {
 		return t, nil
 	}
-	t, err = lt(b, a, ctx)
-	if err != nil {
-		return Undefined, err
-	}
-	return Bool(!t.Bool()), nil
+	return eq(a, b, ctx)
 }
 
 func gt(a, b Value, ctx *evalContext) (Value, error) {
@@ -2237,14 +2228,35 @@ func gte(a, b Value, ctx *evalContext) (Value, error) {
 	if t.Bool() {
 		return t, nil
 	}
-	t, err = gt(b, a, ctx)
-	if err != nil {
-		return Undefined, err
-	}
-	return Bool(!t.Bool()), nil
+	return eq(a, b, ctx)
 }
 
 func eq(a, b Value, ctx *evalContext) (Value, error) {
+	if a.kind == objKind || b.kind == objKind {
+		return doOp(OpEq, a, b, ctx)
+	}
+	if a.kind == b.kind {
+		switch a.kind {
+		case floatKind:
+			return Bool(a.asFloat64() == b.asFloat64()), nil
+		case intKind:
+			return Bool(a.asInt64() == b.asInt64()), nil
+		case uintKind:
+			return Bool(a.asUint64() == b.asUint64()), nil
+		case strKind:
+			var less bool
+			if ctx != nil && ctx.base != nil && ctx.base.NoCase {
+				less = stringEqualInsensitive(a.asString(), b.asString())
+			} else {
+				less = a.asString() == b.asString()
+			}
+			return Bool(less), nil
+		case boolKind:
+			return Bool(a.asBool() == b.asBool()), nil
+		case undefKind, nullKind:
+			return Bool(true), nil
+		}
+	}
 	if a.kind != b.kind && a.kind != objKind && b.kind != objKind {
 		return Bool(a.Float64() == b.Float64()), nil // MARK: float equality
 	}

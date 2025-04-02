@@ -15,7 +15,8 @@ import (
 )
 
 var testTable = []string{
-	// (`BREAK`),
+	(`true.hello == '11'`), (`false`),
+	(`BREAK`),
 	(`.1`), (`0.1`),
 	(`.1e-1`), (`0.01`),
 	(`.1e-1 + 5`), (`5.01`),
@@ -473,6 +474,17 @@ func TestEvalTable(t *testing.T) {
 				return Number(a.Number() / b.Number()), nil
 			case OpMod:
 				return Number(math.Mod(a.Number(), b.Number())), nil
+			case OpEq:
+				if a.String() == "cust1" {
+					return Undefined, errors.New("too bad 1")
+				}
+				if a.String() == "cust2" {
+					return Undefined, errors.New("too bad 2")
+				}
+				if a.String() == "cust3" {
+					return Undefined, errors.New("too bad 2")
+				}
+				return Bool(a.Number() == b.Number()), nil
 			case OpLt:
 				if a.String() == "cust1" {
 					return Undefined, errors.New("too bad 1")
