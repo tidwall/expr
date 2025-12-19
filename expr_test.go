@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"regexp"
 	"strconv"
 	"testing"
 	"time"
@@ -520,6 +521,14 @@ func TestEvalTable(t *testing.T) {
 				return Int64(a.Int64() | b.Int64()), nil
 			case OpBitXor:
 				return Int64(a.Int64() ^ b.Int64()), nil
+			case OpRegex:
+				str := a.String()
+				pat := b.String()
+				matched, err := regexp.MatchString(pat, str)
+				if err != nil {
+					return Bool(false), nil
+				}
+				return Bool(matched), nil
 			default:
 				return Undefined, nil
 			}

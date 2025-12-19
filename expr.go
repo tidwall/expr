@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -835,7 +834,7 @@ func equal(left Value, op byte, expr string, ctx *evalContext,
 	case '!' + 32:
 		return sneq(left, right, ctx)
 	case '~':
-		return regexMatch(left, right)
+		return doOp(OpRegex, left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -2315,14 +2314,6 @@ func sneq(a, b Value, ctx *evalContext) (Value, error) {
 		return Undefined, err
 	}
 	return Bool(!val.Bool()), nil
-}
-
-func regexMatch(a, b Value) (Value, error) {
-	val, err := regexp.MatchString(b.String(), a.String())
-	if err != nil {
-		return Bool(false), nil
-	}
-	return Bool(val), nil
 }
 
 func and(a, b Value, ctx *evalContext) (Value, error) {
