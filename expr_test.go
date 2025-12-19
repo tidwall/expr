@@ -16,7 +16,6 @@ import (
 
 var testTable = []string{
 	(`true.hello == '11'`), (`false`),
-	(`BREAK`),
 	(`.1`), (`0.1`),
 	(`.1e-1`), (`0.01`),
 	(`.1e-1 + 5`), (`5.01`),
@@ -376,6 +375,13 @@ var testTable = []string{
 	(`11*2`), (`22`),
 	(`[11]*2`), (`22`),
 	(`[11,22]*2`), (`NaN`),
+	(`"hello" =~ "he.*"`), (`true`),
+	(`"hello" =~ "hi.*"`), (`false`),
+	(`"abc123" =~ "\\d+"`), (`true`),
+	(`"abc" =~ "\\d+"`), (`false`),
+	(`"test" =~ "(?i)test"`), (`true`),
+	(`"test" =~ "[test"`), (`false`),
+	(`"test" =~ "[test" || "test" == "test"`), (`true`),
 }
 
 func simpleExtendorOptions(
@@ -908,7 +914,6 @@ func TestEvalForEach(t *testing.T) {
 	if err == nil {
 		t.Fatal()
 	}
-
 }
 
 func TestParseString(t *testing.T) {
