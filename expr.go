@@ -878,7 +878,6 @@ func evalEquality(expr string, ctx *evalContext) (Value, error) {
 					opsz++
 				}
 			}
-			fmt.Println("Equal op:", op)
 			left, err = equal(left, op, expr[s:i], ctx)
 			if err != nil {
 				return Undefined, err
@@ -2319,7 +2318,6 @@ func sneq(a, b Value, ctx *evalContext) (Value, error) {
 }
 
 func regexMatch(a, b Value) (Value, error) {
-	fmt.Println(a, b)
 	val, err := regexp.MatchString(b.String(), a.String())
 	if err != nil {
 		return Bool(false), nil
