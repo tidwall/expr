@@ -95,6 +95,7 @@ const (
 	OpBitXor Op = "^"
 	OpBitAnd Op = "&"
 	OpCoal   Op = "??"
+	OpRegex  Op = "=~"
 )
 
 func (op Op) String() string {
@@ -536,7 +537,7 @@ func runeit(data string, which byte) (r rune, n int) {
 // The input data must be prevalidates for correctness, and must only be called
 // from the parseString operation.
 func unescapeString(data string) string {
-	var str = make([]byte, 0, len(data))
+	str := make([]byte, 0, len(data))
 	for i := 0; i < len(data); i++ {
 		switch {
 		default:
@@ -832,6 +833,8 @@ func equal(left Value, op byte, expr string, ctx *evalContext,
 		return seq(left, right, ctx)
 	case '!' + 32:
 		return sneq(left, right, ctx)
+	case '~':
+		return doOp(OpRegex, left, right, ctx)
 	default:
 		return right, nil
 	}
@@ -852,20 +855,27 @@ func evalEquality(expr string, ctx *evalContext) (Value, error) {
 				if i > 0 && (expr[i-1] == '>' || expr[i-1] == '<') {
 					continue
 				}
-				if i == len(expr)-1 || expr[i+1] != '=' {
+				if i == len(expr)-1 || (expr[i+1] != '=' && expr[i+1] != '~') {
 					return Undefined, errSyntax()
 				}
 				opsz++
+				if expr[i+1] == '~' {
+					opch = '~'
+				} else if i+2 < len(expr) && expr[i+2] == '=' {
+					// strict ===
+					opch += 32
+					opsz++
+				}
 			case '!':
 				if i == len(expr)-1 || expr[i+1] != '=' {
 					continue
 				}
 				opsz++
-			}
-			if i+2 < len(expr) && expr[i+2] == '=' {
-				// strict
-				opch += 32
-				opsz++
+				if i+2 < len(expr) && expr[i+2] == '=' {
+					// strict !==
+					opch += 32
+					opsz++
+				}
 			}
 			left, err = equal(left, op, expr[s:i], ctx)
 			if err != nil {
@@ -1372,7 +1382,7 @@ const (
 	stepBitwiseOR              //  6: Bitwise OR (|)
 	stepBitwiseXOR             //  7: Bitwise XOR (^)
 	stepBitwiseAND             //  8: Bitwise AND (&)
-	stepEquality               //  9: Equality (==) (!=)
+	stepEquality               //  9: Equality (== ) (!=) (=~)
 	stepComps                  // 10: Comparison (<) (<=) (>) (>=)
 	stepSums                   // 12: Summation (-) (+)
 	stepFacts                  // 13: Factors (*) (/)
@@ -1395,6 +1405,7 @@ var opSteps = [256]uint16{
 	'*': stepFacts,                       // '*'
 	'/': stepFacts,                       // '/'
 	'%': stepFacts,                       // '%'
+	'~': stepEquality,                    // '~'
 }
 
 type evalContext struct {
@@ -1645,6 +1656,7 @@ func (a Value) Float64() float64 {
 	}
 	return a.toFloat64()
 }
+
 func (a Value) toFloat64() float64 {
 	switch a.kind {
 	case nullKind:
@@ -1679,6 +1691,7 @@ func Int64(x int64) Value {
 		bits: uint64(x),
 	}
 }
+
 func (a Value) asInt64() int64 {
 	return int64(a.bits)
 }
@@ -1690,6 +1703,7 @@ func (a Value) Int64() int64 {
 	}
 	return a.toInt64()
 }
+
 func (a Value) toInt64() int64 {
 	switch a.kind {
 	case boolKind:
@@ -1722,6 +1736,7 @@ func Uint64(x uint64) Value {
 		bits: x,
 	}
 }
+
 func (a Value) asUint64() uint64 {
 	return a.bits
 }
@@ -1733,6 +1748,7 @@ func (a Value) Uint64() uint64 {
 	}
 	return a.toUint64()
 }
+
 func (a Value) toUint64() uint64 {
 	switch a.kind {
 	case boolKind:
@@ -2043,6 +2059,7 @@ func bor(a, b Value, ctx *evalContext) (Value, error) {
 	}
 	return Float64(conv.Itof(a.Int64() | b.Int64())), nil
 }
+
 func band(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitAnd, a, b, ctx)
@@ -2057,6 +2074,7 @@ func band(a, b Value, ctx *evalContext) (Value, error) {
 	}
 	return Float64(conv.Itof(a.Int64() & b.Int64())), nil
 }
+
 func xor(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpBitXor, a, b, ctx)
@@ -2128,6 +2146,7 @@ func div(a, b Value, ctx *evalContext) (Value, error) {
 	}
 	return Float64(a.Float64() / b.Float64()), nil
 }
+
 func mod(a, b Value, ctx *evalContext) (Value, error) {
 	if a.kind == objKind || b.kind == objKind {
 		return doOp(OpMod, a, b, ctx)
