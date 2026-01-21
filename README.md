@@ -32,7 +32,7 @@ For example:
 1e+10 > 0 ? "big" : "small"
 ```
 
-In Go, you're code may look like the following.
+In Go, your code may look like the following.
 
 ```go
 res, _ := expr.Eval(`1 + 1`, nil)
